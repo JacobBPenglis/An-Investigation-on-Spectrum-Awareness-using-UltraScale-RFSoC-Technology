@@ -1,0 +1,43 @@
+set script_dir [file dirname [file normalize [info script]]]
+set root_dir   [file normalize [file join $script_dir ..]]
+set build_dir  [file join $root_dir build]
+
+create_project -force adsb_capture $build_dir \
+    -part xczu28dr-ffvg1517-2-e
+
+set_property board_part xilinx.com:zcu111:part0:1.2 [current_project]
+set_property target_language Verilog [current_project]
+
+# Add the repository-contained custom IP.
+set_property ip_repo_paths [file join $root_dir ip_repo] [current_project]
+update_ip_catalog
+
+# Add custom RTL before recreating the block design.
+add_files -norecurse \
+    [file join $root_dir rtl axis_capture_gate.v]
+
+# Add any XDC files.
+foreach xdc_file [glob -nocomplain \
+        -directory [file join $root_dir constraints] *.xdc] {
+    add_files -fileset constrs_1 -norecurse $xdc_file
+}
+
+# Recreate the drag-and-drop block design.
+source [file join $script_dir adsb_capture_bd.tcl]
+
+validate_bd_design
+save_bd_design
+
+# Use Global synthesis for the block design.
+set bd_file [get_files */adsb_capture.bd]
+set_property synth_checkpoint_mode None $bd_file
+
+# Generate and add the top-level wrapper.
+set wrapper_files [make_wrapper -files $bd_file -top]
+add_files -norecurse $wrapper_files
+
+set_property top adsb_capture_wrapper [current_fileset]
+update_compile_order -fileset sources_1
+
+puts "Project created at:"
+puts [file join $build_dir adsb_capture.xpr]
