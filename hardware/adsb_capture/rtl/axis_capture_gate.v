@@ -1,10 +1,10 @@
 `timescale 1ns / 1ps
 
-// Cuts the continuous ADC stream into finite DMA frames.
+// Finite DMA frames derived from the continuous ADC stream.
 //
 // The ADC cannot be paused, so input samples are always accepted. Samples are
 // dropped while idle. An output stall sets overflow and ends the short frame.
-// Place a normal AXI stream FIFO directly after this block.
+// A standard AXI stream FIFO follows this block in the block design.
 //
 // AXI GPIO control:
 //   frame_samples_ctrl : GPIO channel 1, 32-bit output
@@ -50,8 +50,8 @@ module axis_capture_gate #(
     output wire                     m_axis_tlast
 );
 
-    // Write the sample count before changing arm_toggle. These registers move
-    // both GPIO values into the stream clock domain.
+    // The sample count is written before arm_toggle changes. Both GPIO values
+    // cross into the stream clock domain through these registers.
     reg [31:0] frame_samples_meta = 32'd1;
     reg [31:0] frame_samples_sync = 32'd1;
     reg        arm_meta = 1'b0;
@@ -64,7 +64,7 @@ module axis_capture_gate #(
     reg        done_axis = 1'b0;
     reg        overflow_axis = 1'b0;
 
-    // Holds one output word if the FIFO stalls.
+    // One output word is retained during a FIFO stall.
     reg [DATA_WIDTH-1:0] out_data = {DATA_WIDTH{1'b0}};
     reg                  out_valid = 1'b0;
     reg                  out_last = 1'b0;
@@ -72,7 +72,7 @@ module axis_capture_gate #(
     wire arm_event = arm_sync ^ arm_seen;
     wire out_fire = out_valid && m_axis_tready;
 
-    // Always accept the live stream. Drop samples while idle.
+    // The live input remains ready; idle samples are discarded.
     assign s_axis_tready = 1'b1;
     assign m_axis_tdata = out_data;
     assign m_axis_tvalid = out_valid;
@@ -124,7 +124,7 @@ module axis_capture_gate #(
 
             if (active && s_axis_tvalid) begin
                 if (!out_valid || out_fire) begin
-                    // Do not start another sample on the last frame cycle.
+                    // No new sample starts on the final frame cycle.
                     if (!(out_fire && out_last)) begin
                         out_data <= s_axis_tdata;
                         out_valid <= 1'b1;
@@ -132,8 +132,8 @@ module axis_capture_gate #(
                         sample_count <= sample_count + 1'b1;
                     end
                 end else begin
-                    // The FIFO stalled while the ADC continued. End the frame
-                    // and set overflow so Python rejects it.
+                    // A FIFO stall during live acquisition terminates the
+                    // frame and sets the rejection status.
                     overflow_axis <= 1'b1;
                     active <= 1'b0;
                     out_last <= 1'b1;
@@ -142,7 +142,7 @@ module axis_capture_gate #(
         end
     end
 
-    // Move status bits back to the 100 MHz GPIO clock domain.
+    // Status returns to the 100 MHz GPIO clock domain.
     reg done_meta = 1'b0;
     reg done_sync = 1'b0;
     reg overflow_meta = 1'b0;

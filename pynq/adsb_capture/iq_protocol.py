@@ -1,0 +1,12 @@
+"""Rates and UDP values shared by the board and host."""
+
+import struct
+
+ADC_SAMPLE_RATE_HZ = 2_560_000_000
+RFDC_DECIMATION = 8
+PL_DECIMATION = 32
+IQ_SAMPLE_RATE_HZ = ADC_SAMPLE_RATE_HZ // (RFDC_DECIMATION * PL_DECIMATION)
+
+UDP_MAGIC = b"IQ10"
+UDP_HEADER = struct.Struct("!4sIIIQ")
+UDP_IQ_BYTES = 1024

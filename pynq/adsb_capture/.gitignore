@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+captures/
+*.ci16
+*.ci16.json
+bitstream/*
+!bitstream/README.md
