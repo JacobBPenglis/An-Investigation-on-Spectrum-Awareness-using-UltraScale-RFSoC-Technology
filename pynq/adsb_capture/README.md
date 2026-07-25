@@ -7,9 +7,9 @@
 | Board | ZCU111 with XM500 |
 | Default RF input | XM500 J2, `ADC225_T1_Ch0` |
 | RF-ADC rate | 2.560 GSPS |
-| RFDC decimation | 1 (bypass) |
-| RFDC words per AXI4-Stream beat | 8 |
-| Programmable-logic decimation | 256 (`xsg_bwselector` selector 5) |
+| RFDC decimation | 8 |
+| RFDC words per AXI4-Stream beat | 2 |
+| Programmable-logic decimation | 32 (`xsg_bwselector` selector 5) |
 | Complex output rate | 10 MSPS |
 | Centre frequency | 1090 MHz |
 | Output format | Little-endian signed int16, interleaved I/Q |
@@ -20,8 +20,9 @@ Data path:
 ```text
 XM500 J2
   -> ADC tile 1, block 0
-  -> RFDC real-to-complex mixer, decimation bypassed, 8 words per beat
-  -> xsg_bwselector total decimation by 256
+  -> RFDC real-to-complex mixer, decimation by 8, 2 words per beat
+  -> zero-extension from 32 to 128 bits (no sample packing)
+  -> xsg_bwselector total decimation by 32 (selector 5)
   -> capture gate and AXI DMA
   -> PYNQ DDR
   -> local .ci16 file or UDP transfer
