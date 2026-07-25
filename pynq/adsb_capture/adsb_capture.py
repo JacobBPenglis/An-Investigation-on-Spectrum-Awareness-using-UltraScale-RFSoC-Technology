@@ -27,7 +27,9 @@ try:
         ADC_SAMPLE_RATE_HZ,
         IQ_SAMPLE_RATE_HZ,
         PL_DECIMATION,
+        PL_DECIMATION_SELECT,
         RFDC_DECIMATION,
+        RFDC_FABRIC_WORDS,
         UDP_HEADER,
         UDP_IQ_BYTES,
         UDP_MAGIC,
@@ -37,7 +39,9 @@ except ImportError:  # Allow direct execution on the board.
         ADC_SAMPLE_RATE_HZ,
         IQ_SAMPLE_RATE_HZ,
         PL_DECIMATION,
+        PL_DECIMATION_SELECT,
         RFDC_DECIMATION,
+        RFDC_FABRIC_WORDS,
         UDP_HEADER,
         UDP_IQ_BYTES,
         UDP_MAGIC,
@@ -95,11 +99,13 @@ class AdsbCapture:
         self._configure_receiver(centre_frequency_mhz)
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
-        self.adc_tile.SetupFIFO(True)
+        # The bitstream presents eight RFDC words directly to the 128-bit
+        # full-rate input of xsg_bwselector. Stop the FIFO while updating the
+        # datapath so its runtime state remains consistent with the bitstream.
+        self.adc_tile.SetupFIFO(False)
         self.adc_block.NyquistZone = 1
         self.adc_block.DecimationFactor = RFDC_DECIMATION
-        # Two 16-bit words per 160 MHz beat produce 320 MSPS complex.
-        self.adc_block.FabRdVldWords = 2
+        self.adc_block.FabRdVldWords = RFDC_FABRIC_WORDS
         self.adc_block.MixerSettings = {
             "CoarseMixFreq": xrfdc.COARSE_MIX_BYPASS,
             "EventSource": xrfdc.EVNT_SRC_TILE,
@@ -110,9 +116,10 @@ class AdsbCapture:
             "PhaseOffset": 0.0,
         }
         self.adc_block.UpdateEvent(xrfdc.EVENT_MIXER)
+        self.adc_tile.SetupFIFO(True)
 
-        # The decimator control register stores log2(decimation).
-        self.decimator.write(0x00, 5)  # 2**5 = 32
+        # Selector 5 activates the complete 2.56 GSPS to 10 MSPS filter path.
+        self.decimator.write(0x00, PL_DECIMATION_SELECT)
 
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
         if not np.isclose(sampling_ghz, 2.56, rtol=0, atol=0.005):
@@ -186,7 +193,9 @@ class AdsbCapture:
             "centre_frequency_hz": int(round(self.centre_frequency_mhz * 1e6)),
             "adc_sample_rate_hz": ADC_SAMPLE_RATE_HZ,
             "rfdc_decimation": RFDC_DECIMATION,
+            "rfdc_fabric_words": RFDC_FABRIC_WORDS,
             "pl_decimation": PL_DECIMATION,
+            "pl_decimation_select": PL_DECIMATION_SELECT,
             "utc_unix_ns": time.time_ns(),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")

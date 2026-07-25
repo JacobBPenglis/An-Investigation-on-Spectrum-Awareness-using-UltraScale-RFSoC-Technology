@@ -7,8 +7,9 @@
 | Board | ZCU111 with XM500 |
 | Default RF input | XM500 J2, `ADC225_T1_Ch0` |
 | RF-ADC rate | 2.560 GSPS |
-| RFDC decimation | 8 |
-| Programmable-logic decimation | 32 |
+| RFDC decimation | 1 (bypass) |
+| RFDC words per AXI4-Stream beat | 8 |
+| Programmable-logic decimation | 256 (`xsg_bwselector` selector 5) |
 | Complex output rate | 10 MSPS |
 | Centre frequency | 1090 MHz |
 | Output format | Little-endian signed int16, interleaved I/Q |
@@ -19,8 +20,8 @@ Data path:
 ```text
 XM500 J2
   -> ADC tile 1, block 0
-  -> RFDC real-to-complex mixer and decimation by 8
-  -> xsg_bwselector decimation by 32
+  -> RFDC real-to-complex mixer, decimation bypassed, 8 words per beat
+  -> xsg_bwselector total decimation by 256
   -> capture gate and AXI DMA
   -> PYNQ DDR
   -> local .ci16 file or UDP transfer
@@ -34,8 +35,10 @@ The complete `adsb_capture` directory is the board deployment unit.
 
 | File | Function |
 | --- | --- |
-| `adsb_capture_lab.ipynb` | Board bring-up, DMA, spectrum, energy, file, and UDP experiments |
+| `adsb_capture_lab.ipynb` | Board bring-up, DMA, static/live spectrum, energy, file, and UDP experiments |
+| `adsb_live_processing.ipynb` | Live board-side Mode S preamble detection, ADS-B decoding, aircraft tracking, and timing measurements |
 | `adsb_capture.py` | Overlay loading, RFDC setup, DMA capture, file output, and UDP transmission |
+| `adsb_decoder.py` | Pure-NumPy preamble detector, PPM demodulator, CRC validator, DF17/DF18 field decoder, and CPR tracker |
 | `iq_protocol.py` | Shared sample-rate and UDP packet definitions |
 | `receive_iq_udp.py` | Host-side UDP receiver |
 | `bitstream/adsb_capture.bit` | FPGA configuration |
@@ -80,6 +83,43 @@ print(iq.shape, iq.dtype, IQ_SAMPLE_RATE_HZ)
 
 The default frame contains 262,144 complex samples, corresponding to
 26.2144 ms at 10 MSPS.
+
+## Live ADS-B processing on PYNQ
+
+Open `adsb_live_processing.ipynb` from the board's Jupyter server. The
+notebook keeps the detection path on the ZCU111:
+
+```text
+RFDC and PL decimation
+  -> DMA frame in ZCU111 DDR
+  -> Mode S preamble search on the A53
+  -> 1 Mbit/s PPM demodulation
+  -> CRC-valid DF17/DF18 messages
+  -> callsign, altitude, velocity and airborne CPR tracking
+```
+
+The detector uses only NumPy and the local `adsb_decoder.py`; it does not
+require `pyModeS`, a host-side decoder, or any transmitter-identification
+model. An offline synthetic self-test in the notebook verifies known callsign,
+altitude and even/odd CPR messages before the overlay is loaded.
+
+The default live cell runs for 60 seconds. Set `LIVE_SECONDS = None` to run
+until interrupted. Optional JSON Lines logging writes decoded messages to the
+board filesystem.
+
+The current overlay uses simple S2MM DMA rather than cyclic or scatter/gather
+DMA. Live acquisition and A53 processing therefore occur sequentially and are
+not gap-free. The notebook reports:
+
+- **processing headroom**: captured RF duration divided by detector CPU time;
+- **sampling duty**: captured RF duration divided by total loop wall time;
+- preamble candidates, CRC rejections and accepted messages.
+
+A processing-headroom value above one shows that the detector takes less CPU
+time than the signal duration in each batch. A sampling duty below 100 percent
+still records the dead time imposed by sequential finite captures. Continuous
+reception requires double buffering/scatter-gather DMA or moving the preamble
+front end into programmable logic.
 
 ## Local capture format
 

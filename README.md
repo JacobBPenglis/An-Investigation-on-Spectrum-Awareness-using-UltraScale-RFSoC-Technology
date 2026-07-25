@@ -10,7 +10,7 @@ board experiments, and offline signal-analysis work.
 | Path | Contents | Execution environment |
 | --- | --- | --- |
 | `hardware/adsb_capture/` | Vivado 2024.1 block design, RTL, and custom IP | Vivado build machine |
-| `pynq/adsb_capture/` | Overlay loader, DMA capture, file output, and UDP transfer | ZCU111 PYNQ image and host receiver |
+| `pynq/adsb_capture/` | Overlay loader, DMA capture, live ADS-B detection/decoding, file output, and UDP transfer | ZCU111 PYNQ image and host receiver |
 | `pynq/experiments/` | Earlier RFSoC-SAM and QPSK capture experiments | ZCU111 with the referenced overlays installed |
 | `analysis/notebooks/` | I/Q classification and transmitter-identification experiments | Host Python environment |
 | `analysis/signal_detection/` | Sliding-window detector and time-domain features | Host Python environment |
