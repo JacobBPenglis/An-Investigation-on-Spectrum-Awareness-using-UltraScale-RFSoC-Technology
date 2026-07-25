@@ -609,8 +609,8 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
     CONFIG.ADC1_Refclk_Freq {409.600} \
     CONFIG.ADC1_Sampling_Rate {2.56} \
     CONFIG.ADC_Data_Type10 {1} \
-    CONFIG.ADC_Data_Width10 {2} \
-    CONFIG.ADC_Decimation_Mode10 {8} \
+    CONFIG.ADC_Data_Width10 {8} \
+    CONFIG.ADC_Decimation_Mode10 {1} \
     CONFIG.ADC_Mixer_Mode10 {0} \
     CONFIG.ADC_Mixer_Type10 {2} \
     CONFIG.ADC_NCO_Freq10 {1.09} \
@@ -741,34 +741,6 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set_property CONFIG.NUM_PORTS {1} $irq_concat
 
 
-  # Create instance: rfdc_pad_i, and set properties
-  set rfdc_pad_i [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 rfdc_pad_i ]
-  set_property -dict [list \
-    CONFIG.M_HAS_TKEEP {0} \
-    CONFIG.M_HAS_TLAST {0} \
-    CONFIG.M_HAS_TSTRB {0} \
-    CONFIG.M_TDATA_NUM_BYTES {16} \
-    CONFIG.S_HAS_TKEEP {0} \
-    CONFIG.S_HAS_TLAST {0} \
-    CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {4} \
-  ] $rfdc_pad_i
-
-
-  # Create instance: rfdc_pad_q, and set properties
-  set rfdc_pad_q [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 rfdc_pad_q ]
-  set_property -dict [list \
-    CONFIG.M_HAS_TKEEP {0} \
-    CONFIG.M_HAS_TLAST {0} \
-    CONFIG.M_HAS_TSTRB {0} \
-    CONFIG.M_TDATA_NUM_BYTES {16} \
-    CONFIG.S_HAS_TKEEP {0} \
-    CONFIG.S_HAS_TLAST {0} \
-    CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {4} \
-  ] $rfdc_pad_q
-
-
   # Create interface connections
   connect_bd_intf_net -intf_net adc1_clk_0_1 [get_bd_intf_ports adc1_clk_0] [get_bd_intf_pins rfdc/adc1_clk]
   connect_bd_intf_net -intf_net axi_dma_M_AXI_S2MM [get_bd_intf_pins axi_dma/M_AXI_S2MM] [get_bd_intf_pins memory_smc/S00_AXI]
@@ -784,10 +756,8 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   connect_bd_intf_net -intf_net decimator_m_axis_re [get_bd_intf_pins decimator/m_axis_re] [get_bd_intf_pins subset_i/S_AXIS]
   connect_bd_intf_net -intf_net iq_combiner_M_AXIS [get_bd_intf_pins iq_combiner/M_AXIS] [get_bd_intf_pins capture_gate/S_AXIS]
   connect_bd_intf_net -intf_net memory_smc_M00_AXI [get_bd_intf_pins memory_smc/M00_AXI] [get_bd_intf_pins zynq_ultra_ps_e_0/S_AXI_HP0_FPD]
-  connect_bd_intf_net -intf_net rfdc_m10_axis [get_bd_intf_pins rfdc/m10_axis] [get_bd_intf_pins rfdc_pad_i/S_AXIS]
-  connect_bd_intf_net -intf_net rfdc_m11_axis [get_bd_intf_pins rfdc/m11_axis] [get_bd_intf_pins rfdc_pad_q/S_AXIS]
-  connect_bd_intf_net -intf_net rfdc_pad_i_M_AXIS [get_bd_intf_pins rfdc_pad_i/M_AXIS] [get_bd_intf_pins decimator/s_axis_re]
-  connect_bd_intf_net -intf_net rfdc_pad_q_M_AXIS [get_bd_intf_pins rfdc_pad_q/M_AXIS] [get_bd_intf_pins decimator/s_axis_im]
+  connect_bd_intf_net -intf_net rfdc_m10_axis [get_bd_intf_pins rfdc/m10_axis] [get_bd_intf_pins decimator/s_axis_re]
+  connect_bd_intf_net -intf_net rfdc_m11_axis [get_bd_intf_pins rfdc/m11_axis] [get_bd_intf_pins decimator/s_axis_im]
   connect_bd_intf_net -intf_net stream_cdc_M_AXIS [get_bd_intf_pins stream_cdc/M_AXIS] [get_bd_intf_pins axi_dma/S_AXIS_S2MM]
   connect_bd_intf_net -intf_net subset_i_M_AXIS [get_bd_intf_pins subset_i/M_AXIS] [get_bd_intf_pins iq_combiner/S00_AXIS]
   connect_bd_intf_net -intf_net subset_q_M_AXIS [get_bd_intf_pins subset_q/M_AXIS] [get_bd_intf_pins iq_combiner/S01_AXIS]
@@ -801,10 +771,10 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   connect_bd_net -net capture_gate_status_ctrl [get_bd_pins capture_gate/status_ctrl] [get_bd_pins capture_status/gpio_io_i]
   connect_bd_net -net clock_locked_dout [get_bd_pins clock_locked/dout] [get_bd_pins rst_100m/dcm_locked] [get_bd_pins rst_160m/dcm_locked] [get_bd_pins rst_200m/dcm_locked]
   connect_bd_net -net irq_concat_dout [get_bd_pins irq_concat/dout] [get_bd_pins zynq_ultra_ps_e_0/pl_ps_irq0]
-  connect_bd_net -net rfdc_clk_adc1 [get_bd_pins rfdc/clk_adc1] [get_bd_pins rst_160m/slowest_sync_clk] [get_bd_pins rfdc/m1_axis_aclk] [get_bd_pins decimator/clk] [get_bd_pins decimator_ctrl_cdc/m_axi_aclk] [get_bd_pins subset_i/aclk] [get_bd_pins subset_q/aclk] [get_bd_pins iq_combiner/aclk] [get_bd_pins capture_gate/axis_clk] [get_bd_pins capture_fifo/s_axis_aclk] [get_bd_pins stream_cdc/s_axis_aclk] [get_bd_pins rfdc_pad_i/aclk] [get_bd_pins rfdc_pad_q/aclk]
+  connect_bd_net -net rfdc_clk_adc1 [get_bd_pins rfdc/clk_adc1] [get_bd_pins rst_160m/slowest_sync_clk] [get_bd_pins rfdc/m1_axis_aclk] [get_bd_pins decimator/clk] [get_bd_pins decimator_ctrl_cdc/m_axi_aclk] [get_bd_pins subset_i/aclk] [get_bd_pins subset_q/aclk] [get_bd_pins iq_combiner/aclk] [get_bd_pins capture_gate/axis_clk] [get_bd_pins capture_fifo/s_axis_aclk] [get_bd_pins stream_cdc/s_axis_aclk]
   connect_bd_net -net rst_100m_interconnect_aresetn [get_bd_pins rst_100m/interconnect_aresetn] [get_bd_pins control_smc/aresetn]
   connect_bd_net -net rst_160m [get_bd_pins rst_100m/peripheral_aresetn] [get_bd_pins rfdc/s_axi_aresetn] [get_bd_pins decimator_ctrl_cdc/s_axi_aresetn] [get_bd_pins capture_gate/ctrl_resetn] [get_bd_pins axi_dma/axi_resetn] [get_bd_pins capture_control/s_axi_aresetn] [get_bd_pins capture_status/s_axi_aresetn]
-  connect_bd_net -net rst_160m_peripheral_aresetn [get_bd_pins rst_160m/peripheral_aresetn] [get_bd_pins rfdc/m1_axis_aresetn] [get_bd_pins decimator/xsg_bwselector_aresetn] [get_bd_pins decimator_ctrl_cdc/m_axi_aresetn] [get_bd_pins subset_i/aresetn] [get_bd_pins subset_q/aresetn] [get_bd_pins iq_combiner/aresetn] [get_bd_pins capture_gate/axis_resetn] [get_bd_pins capture_fifo/s_axis_aresetn] [get_bd_pins stream_cdc/s_axis_aresetn] [get_bd_pins rfdc_pad_i/aresetn] [get_bd_pins rfdc_pad_q/aresetn]
+  connect_bd_net -net rst_160m_peripheral_aresetn [get_bd_pins rst_160m/peripheral_aresetn] [get_bd_pins rfdc/m1_axis_aresetn] [get_bd_pins decimator/xsg_bwselector_aresetn] [get_bd_pins decimator_ctrl_cdc/m_axi_aresetn] [get_bd_pins subset_i/aresetn] [get_bd_pins subset_q/aresetn] [get_bd_pins iq_combiner/aresetn] [get_bd_pins capture_gate/axis_resetn] [get_bd_pins capture_fifo/s_axis_aresetn] [get_bd_pins stream_cdc/s_axis_aresetn]
   connect_bd_net -net rst_200m_interconnect_aresetn [get_bd_pins rst_200m/interconnect_aresetn] [get_bd_pins memory_smc/aresetn]
   connect_bd_net -net rst_200m_peripheral_aresetn [get_bd_pins rst_200m/peripheral_aresetn] [get_bd_pins stream_cdc/m_axis_aresetn]
   connect_bd_net -net zynq_ultra_ps_e_0_pl_clk0 [get_bd_pins zynq_ultra_ps_e_0/pl_clk0] [get_bd_pins rst_100m/slowest_sync_clk] [get_bd_pins control_smc/aclk] [get_bd_pins rfdc/s_axi_aclk] [get_bd_pins decimator_ctrl_cdc/s_axi_aclk] [get_bd_pins capture_gate/ctrl_clk] [get_bd_pins axi_dma/s_axi_lite_aclk] [get_bd_pins capture_control/s_axi_aclk] [get_bd_pins capture_status/s_axi_aclk] [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_lpd_aclk]
