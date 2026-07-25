@@ -99,9 +99,11 @@ class AdsbCapture:
         self._configure_receiver(centre_frequency_mhz)
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
-        # The bitstream presents eight RFDC words directly to the 128-bit
-        # full-rate input of xsg_bwselector. Stop the FIFO while updating the
-        # datapath so its runtime state remains consistent with the bitstream.
+        # Match the RFDC configuration compiled into the overlay: decimation
+        # by 8 and two 16-bit samples in each 32-bit AXI-stream beat. The two
+        # subset converters only zero-extend those 32 bits for the legacy
+        # 128-bit xsg_bwselector ports; they do not change the sample rate.
+        # Stop the FIFO while updating the RFDC datapath.
         self.adc_tile.SetupFIFO(False)
         self.adc_block.NyquistZone = 1
         self.adc_block.DecimationFactor = RFDC_DECIMATION
@@ -118,8 +120,29 @@ class AdsbCapture:
         self.adc_block.UpdateEvent(xrfdc.EVENT_MIXER)
         self.adc_tile.SetupFIFO(True)
 
-        # Selector 5 activates the complete 2.56 GSPS to 10 MSPS filter path.
+        reported_decimation = int(self.adc_block.DecimationFactor)
+        reported_words = int(self.adc_block.FabRdVldWords)
+        if (
+            reported_decimation != RFDC_DECIMATION
+            or reported_words != RFDC_FABRIC_WORDS
+        ):
+            raise RuntimeError(
+                "RFDC runtime configuration does not match the compiled "
+                f"stream interface: decimation={reported_decimation}, "
+                f"words/beat={reported_words}; expected "
+                f"{RFDC_DECIMATION} and {RFDC_FABRIC_WORDS}."
+            )
+
+        # In xsg_bwselector, selector 5 is total PL decimation by 32: the
+        # mandatory two-sample coarse stage followed by four divide-by-2 FIRs.
+        # 2.56 GSPS / 8 / 32 = 10 MSPS complex output.
         self.decimator.write(0x00, PL_DECIMATION_SELECT)
+        reported_selector = int(self.decimator.read(0x00))
+        if reported_selector != PL_DECIMATION_SELECT:
+            raise RuntimeError(
+                f"PL decimator selector read back as {reported_selector}; "
+                f"expected {PL_DECIMATION_SELECT}."
+            )
 
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
         if not np.isclose(sampling_ghz, 2.56, rtol=0, atol=0.005):
