@@ -1,6 +1,8 @@
 set script_dir [file dirname [file normalize [info script]]]
 set root_dir   [file normalize [file join $script_dir ..]]
-set build_dir  [file join $root_dir build]
+# A versioned build directory prevents Vivado from reusing the generated IP,
+# run database, or bitstream from the earlier width-converter designs.
+set build_dir  [file join $root_dir build_rfdc8_pl32_verified]
 
 create_project -force adsb_capture $build_dir \
     -part xczu28dr-ffvg1517-2-e
@@ -10,7 +12,7 @@ set_property target_language Verilog [current_project]
 
 # Repository-contained custom IP.
 set_property ip_repo_paths [file join $root_dir ip_repo] [current_project]
-update_ip_catalog
+update_ip_catalog -rebuild
 
 # Custom RTL is loaded before the module reference is recreated.
 add_files -norecurse \

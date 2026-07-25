@@ -31,7 +31,11 @@ module axis_capture_gate #(
 
     input  wire [31:0]              frame_samples_ctrl,
     input  wire                     arm_toggle_ctrl,
-    output wire [2:0]               status_ctrl,
+    // [31:16] identifies the verified RFDC8/PL32 design.
+    // [15:3] reports the most recently measured number of axis_clk cycles
+    //        between input TVALID pulses.
+    // [2:0]  remains {busy, overflow, done}.
+    output wire [31:0]              status_ctrl,
 
     (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TDATA" *)
     input  wire [DATA_WIDTH-1:0]     s_axis_tdata,
@@ -64,6 +68,13 @@ module axis_capture_gate #(
     reg        done_axis = 1'b0;
     reg        overflow_axis = 1'b0;
 
+    // The selector-5 path must produce one complex sample every 16 cycles of
+    // the 160 MHz RFDC fabric clock.  Exposing the measured interval makes a
+    // stale/deepest-decimator bitstream immediately distinguishable: that
+    // path reports 128 and produces the observed 1.25 MSPS stream.
+    reg [12:0] valid_gap_counter_axis = 13'd0;
+    reg [12:0] valid_interval_axis = 13'd0;
+
     // One output word is retained during a FIFO stall.
     reg [DATA_WIDTH-1:0] out_data = {DATA_WIDTH{1'b0}};
     reg                  out_valid = 1'b0;
@@ -84,11 +95,20 @@ module axis_capture_gate #(
             frame_samples_sync <= 32'd1;
             arm_meta <= 1'b0;
             arm_sync <= 1'b0;
+            valid_gap_counter_axis <= 13'd0;
+            valid_interval_axis <= 13'd0;
         end else begin
             frame_samples_meta <= frame_samples_ctrl;
             frame_samples_sync <= frame_samples_meta;
             arm_meta <= arm_toggle_ctrl;
             arm_sync <= arm_meta;
+
+            if (s_axis_tvalid) begin
+                valid_interval_axis <= valid_gap_counter_axis + 1'b1;
+                valid_gap_counter_axis <= 13'd0;
+            end else if (valid_gap_counter_axis != 13'h1fff) begin
+                valid_gap_counter_axis <= valid_gap_counter_axis + 1'b1;
+            end
         end
     end
 
@@ -149,6 +169,8 @@ module axis_capture_gate #(
     reg overflow_sync = 1'b0;
     reg busy_meta = 1'b0;
     reg busy_sync = 1'b0;
+    reg [12:0] valid_interval_meta = 13'd0;
+    reg [12:0] valid_interval_sync = 13'd0;
 
     always @(posedge ctrl_clk) begin
         if (!ctrl_resetn) begin
@@ -158,6 +180,8 @@ module axis_capture_gate #(
             overflow_sync <= 1'b0;
             busy_meta <= 1'b0;
             busy_sync <= 1'b0;
+            valid_interval_meta <= 13'd0;
+            valid_interval_sync <= 13'd0;
         end else begin
             done_meta <= done_axis;
             done_sync <= done_meta;
@@ -165,9 +189,17 @@ module axis_capture_gate #(
             overflow_sync <= overflow_meta;
             busy_meta <= active;
             busy_sync <= busy_meta;
+            valid_interval_meta <= valid_interval_axis;
+            valid_interval_sync <= valid_interval_meta;
         end
     end
 
-    assign status_ctrl = {busy_sync, overflow_sync, done_sync};
+    assign status_ctrl = {
+        16'hA832,
+        valid_interval_sync,
+        busy_sync,
+        overflow_sync,
+        done_sync
+    };
 
 endmodule

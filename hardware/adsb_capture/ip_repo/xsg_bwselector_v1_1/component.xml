@@ -3,7 +3,7 @@
   <spirit:vendor>strath.ac.uk</spirit:vendor>
   <spirit:library>RFSoC</spirit:library>
   <spirit:name>xsg_bwselector</spirit:name>
-  <spirit:version>1.1</spirit:version>
+  <spirit:version>1.2</spirit:version>
   <spirit:busInterfaces>
     <spirit:busInterface>
       <spirit:name>m_axis_im</spirit:name>

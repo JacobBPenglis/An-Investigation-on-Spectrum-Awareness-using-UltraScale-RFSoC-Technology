@@ -1,4 +1,5 @@
 build/
+build_rfdc8_pl32_verified/
 dist/
 .Xil/
 *.jou

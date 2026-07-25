@@ -25,6 +25,8 @@ from pynq import Overlay, allocate
 try:
     from .iq_protocol import (
         ADC_SAMPLE_RATE_HZ,
+        EXPECTED_OUTPUT_VALID_INTERVAL,
+        HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
         PL_DECIMATION,
         PL_DECIMATION_SELECT,
@@ -37,6 +39,8 @@ try:
 except ImportError:  # Allow direct execution on the board.
     from iq_protocol import (
         ADC_SAMPLE_RATE_HZ,
+        EXPECTED_OUTPUT_VALID_INTERVAL,
+        HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
         PL_DECIMATION,
         PL_DECIMATION_SELECT,
@@ -96,18 +100,40 @@ class AdsbCapture:
         self.adc_block = self.adc_tile.blocks[0]
         self._arm_toggle = 0
 
+        status_word = int(self.status.channel1.read())
+        hardware_build_id = (status_word >> 16) & 0xFFFF
+        if hardware_build_id != HARDWARE_BUILD_ID:
+            raise RuntimeError(
+                "The programmed FPGA is not the verified RFDC8/PL32 build: "
+                f"hardware ID 0x{hardware_build_id:04x}, expected "
+                f"0x{HARDWARE_BUILD_ID:04x}. Deploy the matched .bit and "
+                ".hwh generated from build_rfdc8_pl32_verified."
+            )
+
         self._configure_receiver(centre_frequency_mhz)
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
-        # Match the RFDC configuration compiled into the overlay: decimation
-        # by 8 and two 16-bit samples in each 32-bit AXI-stream beat. The two
-        # subset converters only zero-extend those 32 bits for the legacy
-        # 128-bit xsg_bwselector ports; they do not change the sample rate.
-        # Stop the FIFO while updating the RFDC datapath.
-        self.adc_tile.SetupFIFO(False)
+        # Decimation and fabric width affect the physical PL interface and are
+        # therefore fixed in Vivado. Do not rewrite them at runtime. A driver
+        # write can make the RFDC register readback look correct while leaving
+        # an implemented interface that is incompatible with the new rate.
+        self.adc_tile.SetupFIFO(True)
         self.adc_block.NyquistZone = 1
-        self.adc_block.DecimationFactor = RFDC_DECIMATION
-        self.adc_block.FabRdVldWords = RFDC_FABRIC_WORDS
+
+        reported_decimation = int(self.adc_block.DecimationFactor)
+        reported_words = int(self.adc_block.FabRdVldWords)
+        if (
+            reported_decimation != RFDC_DECIMATION
+            or reported_words != RFDC_FABRIC_WORDS
+        ):
+            raise RuntimeError(
+                "The implemented RFDC interface does not match the Python "
+                f"protocol: decimation={reported_decimation}, words/beat="
+                f"{reported_words}; expected {RFDC_DECIMATION} and "
+                f"{RFDC_FABRIC_WORDS}. Rebuild the overlay; do not correct "
+                "these physical-interface settings at runtime."
+            )
+
         self.adc_block.MixerSettings = {
             "CoarseMixFreq": xrfdc.COARSE_MIX_BYPASS,
             "EventSource": xrfdc.EVNT_SRC_TILE,
@@ -118,20 +144,6 @@ class AdsbCapture:
             "PhaseOffset": 0.0,
         }
         self.adc_block.UpdateEvent(xrfdc.EVENT_MIXER)
-        self.adc_tile.SetupFIFO(True)
-
-        reported_decimation = int(self.adc_block.DecimationFactor)
-        reported_words = int(self.adc_block.FabRdVldWords)
-        if (
-            reported_decimation != RFDC_DECIMATION
-            or reported_words != RFDC_FABRIC_WORDS
-        ):
-            raise RuntimeError(
-                "RFDC runtime configuration does not match the compiled "
-                f"stream interface: decimation={reported_decimation}, "
-                f"words/beat={reported_words}; expected "
-                f"{RFDC_DECIMATION} and {RFDC_FABRIC_WORDS}."
-            )
 
         # In xsg_bwselector, selector 5 is total PL decimation by 32: the
         # mandatory two-sample coarse stage followed by four divide-by-2 FIRs.
@@ -144,6 +156,28 @@ class AdsbCapture:
                 f"expected {PL_DECIMATION_SELECT}."
             )
 
+        # The final stream is clocked at 160 MHz and selector 5 must assert
+        # TVALID once every 16 cycles: 160 MHz / 16 = 10 MSPS.  This measures
+        # the implemented datapath rather than trusting register readback.
+        deadline = time.monotonic() + 0.5
+        valid_interval = 0
+        while time.monotonic() < deadline:
+            status_word = int(self.status.channel1.read())
+            valid_interval = (status_word >> 3) & 0x1FFF
+            if valid_interval:
+                break
+            time.sleep(0.005)
+        if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
+            measured_rate_hz = 160_000_000 / max(valid_interval, 1)
+            raise RuntimeError(
+                "Implemented PL sample rate is wrong: output TVALID interval "
+                f"is {valid_interval} fabric clocks "
+                f"(~{measured_rate_hz / 1e6:.3f} MSPS), expected "
+                f"{EXPECTED_OUTPUT_VALID_INTERVAL} clocks (10.000 MSPS). "
+                "An interval of 128 identifies the deepest /256 PL path and "
+                "explains the observed x8 FFT-frequency error."
+            )
+
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
         if not np.isclose(sampling_ghz, 2.56, rtol=0, atol=0.005):
             raise RuntimeError(
@@ -154,6 +188,16 @@ class AdsbCapture:
     @property
     def centre_frequency_mhz(self) -> float:
         return abs(float(self.adc_block.MixerSettings["Freq"]))
+
+    @property
+    def hardware_build_id(self) -> int:
+        """Return the build identifier implemented in the FPGA fabric."""
+        return (int(self.status.channel1.read()) >> 16) & 0xFFFF
+
+    @property
+    def output_valid_interval(self) -> int:
+        """Return fabric-clock cycles per final complex output sample."""
+        return (int(self.status.channel1.read()) >> 3) & 0x1FFF
 
     @centre_frequency_mhz.setter
     def centre_frequency_mhz(self, value: float) -> None:
@@ -219,6 +263,8 @@ class AdsbCapture:
             "rfdc_fabric_words": RFDC_FABRIC_WORDS,
             "pl_decimation": PL_DECIMATION,
             "pl_decimation_select": PL_DECIMATION_SELECT,
+            "hardware_build_id": f"0x{self.hardware_build_id:04X}",
+            "output_valid_interval": self.output_valid_interval,
             "utc_unix_ns": time.time_ns(),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")

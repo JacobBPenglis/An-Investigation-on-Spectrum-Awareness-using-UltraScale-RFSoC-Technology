@@ -1,6 +1,8 @@
 """ZCU111/PYNQ capture package."""
 
 from .iq_protocol import (
+    EXPECTED_OUTPUT_VALID_INTERVAL,
+    HARDWARE_BUILD_ID,
     IQ_SAMPLE_RATE_HZ,
     PL_DECIMATION,
     PL_DECIMATION_SELECT,
@@ -10,6 +12,8 @@ from .iq_protocol import (
 
 __all__ = [
     "AdsbCapture",
+    "EXPECTED_OUTPUT_VALID_INTERVAL",
+    "HARDWARE_BUILD_ID",
     "IQ_SAMPLE_RATE_HZ",
     "PL_DECIMATION",
     "PL_DECIMATION_SELECT",

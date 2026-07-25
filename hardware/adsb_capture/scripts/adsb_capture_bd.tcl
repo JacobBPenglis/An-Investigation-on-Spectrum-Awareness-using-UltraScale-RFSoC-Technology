@@ -142,7 +142,7 @@ xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:proc_sys_reset:5.0\
 xilinx.com:ip:xlconstant:1.1\
 xilinx.com:ip:usp_rf_data_converter:2.6\
-strath.ac.uk:RFSoC:xsg_bwselector:1.1\
+strath.ac.uk:RFSoC:xsg_bwselector:1.2\
 xilinx.com:ip:axi_clock_converter:2.1\
 xilinx.com:ip:axis_subset_converter:1.1\
 xilinx.com:ip:axis_combiner:1.1\
@@ -624,7 +624,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set rst_160m [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_160m ]
 
   # Create instance: decimator, and set properties
-  set decimator [ create_bd_cell -type ip -vlnv strath.ac.uk:RFSoC:xsg_bwselector:1.1 decimator ]
+  set decimator [ create_bd_cell -type ip -vlnv strath.ac.uk:RFSoC:xsg_bwselector:1.2 decimator ]
 
   # Create instance: decimator_ctrl_cdc, and set properties
   set decimator_ctrl_cdc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_clock_converter:2.1 decimator_ctrl_cdc ]
@@ -712,7 +712,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set capture_status [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_gpio:2.0 capture_status ]
   set_property -dict [list \
     CONFIG.C_ALL_INPUTS {1} \
-    CONFIG.C_GPIO_WIDTH {3} \
+    CONFIG.C_GPIO_WIDTH {32} \
   ] $capture_status
 
 
@@ -844,3 +844,47 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
 
 create_root_design ""
 
+# Fail project creation if Vivado silently substitutes a stale IP definition
+# or changes a rate/width property.  These properties define the complete
+# 2.560 GSPS -> 320 MSPS -> 10 MSPS sample-rate chain.
+proc assert_bd_property {object_name property_name expected_value} {
+  set object [get_bd_cells $object_name]
+  set actual_value [get_property $property_name $object]
+  if {$actual_value ne $expected_value} {
+    error "ADS-B design audit failed: $object_name $property_name is '$actual_value', expected '$expected_value'"
+  }
+}
+
+proc assert_bd_numeric_property {object_name property_name expected_value} {
+  set object [get_bd_cells $object_name]
+  set actual_value [get_property $property_name $object]
+  if {abs(double($actual_value) - double($expected_value)) > 1.0e-9} {
+    error "ADS-B design audit failed: $object_name $property_name is '$actual_value', expected '$expected_value'"
+  }
+}
+
+assert_bd_numeric_property rfdc CONFIG.ADC1_Sampling_Rate 2.56
+assert_bd_property rfdc CONFIG.ADC_Data_Type10 1
+assert_bd_property rfdc CONFIG.ADC_Data_Width10 2
+assert_bd_property rfdc CONFIG.ADC_Decimation_Mode10 8
+assert_bd_property rfdc CONFIG.ADC_Mixer_Mode10 0
+assert_bd_property rfdc CONFIG.ADC_Mixer_Type10 2
+assert_bd_numeric_property rfdc CONFIG.ADC_NCO_Freq10 1.09
+assert_bd_property rfdc CONFIG.ADC_Neg_Quadrature10 true
+assert_bd_property decimator VLNV strath.ac.uk:RFSoC:xsg_bwselector:1.2
+assert_bd_property rfdc_pad_i CONFIG.S_TDATA_NUM_BYTES 4
+assert_bd_property rfdc_pad_i CONFIG.M_TDATA_NUM_BYTES 16
+assert_bd_property rfdc_pad_i CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]}
+assert_bd_property rfdc_pad_q CONFIG.S_TDATA_NUM_BYTES 4
+assert_bd_property rfdc_pad_q CONFIG.M_TDATA_NUM_BYTES 16
+assert_bd_property rfdc_pad_q CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]}
+assert_bd_property subset_i CONFIG.S_TDATA_NUM_BYTES 16
+assert_bd_property subset_i CONFIG.M_TDATA_NUM_BYTES 2
+assert_bd_property subset_i CONFIG.TDATA_REMAP {tdata[15:0]}
+assert_bd_property subset_q CONFIG.S_TDATA_NUM_BYTES 16
+assert_bd_property subset_q CONFIG.M_TDATA_NUM_BYTES 2
+assert_bd_property subset_q CONFIG.TDATA_REMAP {tdata[15:0]}
+assert_bd_property axi_dma CONFIG.c_s_axis_s2mm_tdata_width 32
+assert_bd_property capture_status CONFIG.C_GPIO_WIDTH 32
+
+puts "ADS-B design audit passed: RFDC /8, two words/beat, PL selector-5 target /32."

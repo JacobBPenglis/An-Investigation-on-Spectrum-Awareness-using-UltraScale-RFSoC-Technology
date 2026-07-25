@@ -11,7 +11,9 @@
 | Block design | `adsb_capture` |
 
 The project is recreated from Tcl. The generated Vivado workspace is
-`hardware/adsb_capture/build/` and is excluded from Git.
+`hardware/adsb_capture/build_rfdc8_pl32_verified/` and is excluded from Git.
+The versioned directory prevents reuse of runs from the earlier interface
+configurations.
 
 ## Source layout
 
@@ -39,7 +41,7 @@ vivado -mode batch -source scripts/create_project.tcl
 GUI launch:
 
 ```bash
-vivado build/adsb_capture.xpr
+vivado build_rfdc8_pl32_verified/adsb_capture.xpr
 ```
 
 The block design remains editable through the normal IP Integrator diagram.
@@ -54,7 +56,14 @@ write_bd_tcl -force [file join $hw scripts adsb_capture_bd.tcl]
 ```
 
 The block design uses Global synthesis. `create_project.tcl` applies
-`synth_checkpoint_mode None` when the project is recreated.
+`synth_checkpoint_mode None`, rebuilds the local IP catalog, and audits all
+rate-defining RFDC and AXI-stream width properties when the project is
+recreated. The local `xsg_bwselector` VLNV is version 1.2 so Vivado cannot
+substitute the previously cached 1.1 definition.
+
+The capture status register identifies this source as build `0xA832` and
+reports the measured output-TVALID interval. Selector 5 must report 16 cycles
+of the 160 MHz fabric clock, which is exactly 10 MSPS.
 
 ## Runtime artifacts
 
