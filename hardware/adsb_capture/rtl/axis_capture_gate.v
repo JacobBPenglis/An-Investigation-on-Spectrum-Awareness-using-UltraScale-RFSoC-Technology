@@ -36,6 +36,9 @@ module axis_capture_gate #(
     //        between input TVALID pulses.
     // [2:0]  remains {busy, overflow, done}.
     output wire [31:0]              status_ctrl,
+    // Number of axis_clk edges observed during the latest 1 ms interval of
+    // the 100 MHz control clock. A correct RFDC interface reports ~160000.
+    output wire [31:0]              axis_clocks_per_ms_ctrl,
 
     (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TDATA" *)
     input  wire [DATA_WIDTH-1:0]     s_axis_tdata,
@@ -162,6 +165,66 @@ module axis_capture_gate #(
         end
     end
 
+    // Measure the RFDC-supplied fabric clock independently of its metadata.
+    // A Gray counter is used so the multi-bit CDC cannot create a torn count.
+    reg [31:0] axis_clock_counter = 32'd0;
+    reg [31:0] axis_clock_gray = 32'd0;
+
+    always @(posedge axis_clk) begin
+        if (!axis_resetn) begin
+            axis_clock_counter <= 32'd0;
+            axis_clock_gray <= 32'd0;
+        end else begin
+            axis_clock_counter <= axis_clock_counter + 1'b1;
+            axis_clock_gray <= ((axis_clock_counter + 1'b1) >> 1) ^
+                               (axis_clock_counter + 1'b1);
+        end
+    end
+
+    function [31:0] gray_to_binary;
+        input [31:0] gray;
+        integer bit_index;
+        begin
+            gray_to_binary[31] = gray[31];
+            for (bit_index = 30; bit_index >= 0; bit_index = bit_index - 1)
+                gray_to_binary[bit_index] =
+                    gray_to_binary[bit_index + 1] ^ gray[bit_index];
+        end
+    endfunction
+
+    reg [31:0] axis_clock_gray_meta = 32'd0;
+    reg [31:0] axis_clock_gray_sync = 32'd0;
+    reg [31:0] axis_clock_previous = 32'd0;
+    reg [31:0] axis_clocks_per_ms = 32'd0;
+    reg [16:0] clock_window_counter = 17'd0;
+    wire [31:0] axis_clock_binary_sync =
+        gray_to_binary(axis_clock_gray_sync);
+
+    assign axis_clocks_per_ms_ctrl = axis_clocks_per_ms;
+
+    always @(posedge ctrl_clk) begin
+        if (!ctrl_resetn) begin
+            axis_clock_gray_meta <= 32'd0;
+            axis_clock_gray_sync <= 32'd0;
+            axis_clock_previous <= 32'd0;
+            axis_clocks_per_ms <= 32'd0;
+            clock_window_counter <= 17'd0;
+        end else begin
+            axis_clock_gray_meta <= axis_clock_gray;
+            axis_clock_gray_sync <= axis_clock_gray_meta;
+
+            // PL0 is fixed at 100 MHz in this design: 100000 cycles = 1 ms.
+            if (clock_window_counter == 17'd99999) begin
+                clock_window_counter <= 17'd0;
+                axis_clocks_per_ms <=
+                    axis_clock_binary_sync - axis_clock_previous;
+                axis_clock_previous <= axis_clock_binary_sync;
+            end else begin
+                clock_window_counter <= clock_window_counter + 1'b1;
+            end
+        end
+    end
+
     // Status returns to the 100 MHz GPIO clock domain.
     reg done_meta = 1'b0;
     reg done_sync = 1'b0;
@@ -195,7 +258,7 @@ module axis_capture_gate #(
     end
 
     assign status_ctrl = {
-        16'hA832,
+        16'hA833,
         valid_interval_sync,
         busy_sync,
         overflow_sync,

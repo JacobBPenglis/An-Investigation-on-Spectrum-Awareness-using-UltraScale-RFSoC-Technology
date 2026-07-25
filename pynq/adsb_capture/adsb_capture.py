@@ -25,6 +25,7 @@ from pynq import Overlay, allocate
 try:
     from .iq_protocol import (
         ADC_SAMPLE_RATE_HZ,
+        EXPECTED_AXIS_CLOCKS_PER_MS,
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
@@ -32,6 +33,7 @@ try:
         PL_DECIMATION_SELECT,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
+        RFDC_FABRIC_CLOCK_HZ,
         UDP_HEADER,
         UDP_IQ_BYTES,
         UDP_MAGIC,
@@ -39,6 +41,7 @@ try:
 except ImportError:  # Allow direct execution on the board.
     from iq_protocol import (
         ADC_SAMPLE_RATE_HZ,
+        EXPECTED_AXIS_CLOCKS_PER_MS,
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
@@ -46,6 +49,7 @@ except ImportError:  # Allow direct execution on the board.
         PL_DECIMATION_SELECT,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
+        RFDC_FABRIC_CLOCK_HZ,
         UDP_HEADER,
         UDP_IQ_BYTES,
         UDP_MAGIC,
@@ -87,6 +91,7 @@ class AdsbCapture:
 
         # Load order: HWH metadata, RF reference clocks, then PL configuration.
         self.overlay = Overlay(str(bitfile_path), download=False)
+        self._validate_hwh_metadata()
         xrfclk.set_all_ref_clks(REFERENCE_CLOCK_MHZ)
         self.overlay.download()
 
@@ -107,10 +112,59 @@ class AdsbCapture:
                 "The programmed FPGA is not the verified RFDC8/PL32 build: "
                 f"hardware ID 0x{hardware_build_id:04x}, expected "
                 f"0x{HARDWARE_BUILD_ID:04x}. Deploy the matched .bit and "
-                ".hwh generated from build_rfdc8_pl32_verified."
+                ".hwh generated from build_rfdc8_pl32_clk160."
+            )
+
+        deadline = time.monotonic() + 0.25
+        axis_clocks_per_ms = 0
+        while time.monotonic() < deadline:
+            axis_clocks_per_ms = int(self.status.channel2.read())
+            if axis_clocks_per_ms:
+                break
+            time.sleep(0.005)
+        clock_tolerance = max(32, EXPECTED_AXIS_CLOCKS_PER_MS // 1000)
+        if abs(axis_clocks_per_ms - EXPECTED_AXIS_CLOCKS_PER_MS) > clock_tolerance:
+            raise RuntimeError(
+                "The implemented RFDC fabric clock is wrong: the FPGA "
+                f"measured {axis_clocks_per_ms} axis clocks/ms "
+                f"(~{axis_clocks_per_ms / 1000:.3f} MHz), expected "
+                f"{EXPECTED_AXIS_CLOCKS_PER_MS} clocks/ms "
+                f"({RFDC_FABRIC_CLOCK_HZ / 1e6:.3f} MHz)."
             )
 
         self._configure_receiver(centre_frequency_mhz)
+
+    def _validate_hwh_metadata(self) -> None:
+        """Reject an HWH whose implemented RFDC interface is not 160 MHz."""
+        try:
+            parameters = self.overlay.ip_dict["rfdc"]["parameters"]
+        except (KeyError, TypeError) as exc:
+            raise RuntimeError(
+                "The HWH does not contain RFDC parameters for instance 'rfdc'. "
+                "Deploy the HWH generated beside the matching bitstream."
+            ) from exc
+
+        expected = {
+            "C_ADC1_Fabric_Freq": 160.0,
+            "C_ADC1_Outclk_Freq": 160.0,
+            "C_ADC1_Sampling_Rate": 2.56,
+            "C_ADC_Data_Width10": 2.0,
+            "C_ADC_Decimation_Mode10": 8.0,
+        }
+        mismatches = []
+        for name, wanted in expected.items():
+            try:
+                actual = float(parameters[name])
+            except (KeyError, TypeError, ValueError):
+                mismatches.append(f"{name}=missing")
+                continue
+            if not np.isclose(actual, wanted, rtol=0, atol=1e-6):
+                mismatches.append(f"{name}={actual:g} (expected {wanted:g})")
+        if mismatches:
+            raise RuntimeError(
+                "The HWH describes the wrong RFDC clock/rate interface: "
+                + ", ".join(mismatches)
+            )
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
         # Decimation and fabric width affect the physical PL interface and are
@@ -199,6 +253,11 @@ class AdsbCapture:
         """Return fabric-clock cycles per final complex output sample."""
         return (int(self.status.channel1.read()) >> 3) & 0x1FFF
 
+    @property
+    def fabric_clock_hz(self) -> int:
+        """Return the independently measured RFDC AXI-stream clock."""
+        return int(self.status.channel2.read()) * 1000
+
     @centre_frequency_mhz.setter
     def centre_frequency_mhz(self, value: float) -> None:
         settings = dict(self.adc_block.MixerSettings)
@@ -261,6 +320,7 @@ class AdsbCapture:
             "adc_sample_rate_hz": ADC_SAMPLE_RATE_HZ,
             "rfdc_decimation": RFDC_DECIMATION,
             "rfdc_fabric_words": RFDC_FABRIC_WORDS,
+            "rfdc_fabric_clock_hz": self.fabric_clock_hz,
             "pl_decimation": PL_DECIMATION,
             "pl_decimation_select": PL_DECIMATION_SELECT,
             "hardware_build_id": f"0x{self.hardware_build_id:04X}",

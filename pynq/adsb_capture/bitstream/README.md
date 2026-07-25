@@ -10,9 +10,9 @@ adsb_capture.hwh
 These files come from
 
 ```text
-build_rfdc8_pl32_verified/adsb_capture.runs/impl_1/adsb_capture_wrapper.bit
+build_rfdc8_pl32_clk160/adsb_capture.runs/impl_1/adsb_capture_wrapper.bit
   : rename to adsb_capture.bit
-build_rfdc8_pl32_verified/adsb_capture.gen/sources_1/bd/adsb_capture/hw_handoff/adsb_capture.hwh
+build_rfdc8_pl32_clk160/adsb_capture.gen/sources_1/bd/adsb_capture/hw_handoff/adsb_capture.hwh
 ```
 
 Both files originate from the same Vivado implementation run and retain the

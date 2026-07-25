@@ -2,7 +2,7 @@ set script_dir [file dirname [file normalize [info script]]]
 set root_dir   [file normalize [file join $script_dir ..]]
 # A versioned build directory prevents Vivado from reusing the generated IP,
 # run database, or bitstream from the earlier width-converter designs.
-set build_dir  [file join $root_dir build_rfdc8_pl32_verified]
+set build_dir  [file join $root_dir build_rfdc8_pl32_clk160]
 
 create_project -force adsb_capture $build_dir \
     -part xczu28dr-ffvg1517-2-e

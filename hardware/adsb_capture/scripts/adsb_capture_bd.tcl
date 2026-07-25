@@ -605,6 +605,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   # Create instance: rfdc, and set properties
   set rfdc [ create_bd_cell -type ip -vlnv xilinx.com:ip:usp_rf_data_converter:2.6 rfdc ]
   set_property -dict [list \
+    CONFIG.ADC1_Outclk_Freq {160.000} \
     CONFIG.ADC1_PLL_Enable {true} \
     CONFIG.ADC1_Refclk_Freq {409.600} \
     CONFIG.ADC1_Sampling_Rate {2.56} \
@@ -712,7 +713,10 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set capture_status [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_gpio:2.0 capture_status ]
   set_property -dict [list \
     CONFIG.C_ALL_INPUTS {1} \
+    CONFIG.C_ALL_INPUTS_2 {1} \
     CONFIG.C_GPIO_WIDTH {32} \
+    CONFIG.C_GPIO2_WIDTH {32} \
+    CONFIG.C_IS_DUAL {1} \
   ] $capture_status
 
 
@@ -803,6 +807,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   connect_bd_net -net capture_control_gpio2_io_o [get_bd_pins capture_control/gpio2_io_o] [get_bd_pins capture_gate/arm_toggle_ctrl]
   connect_bd_net -net capture_control_gpio_io_o [get_bd_pins capture_control/gpio_io_o] [get_bd_pins capture_gate/frame_samples_ctrl]
   connect_bd_net -net capture_gate_status_ctrl [get_bd_pins capture_gate/status_ctrl] [get_bd_pins capture_status/gpio_io_i]
+  connect_bd_net -net capture_gate_axis_clock_count [get_bd_pins capture_gate/axis_clocks_per_ms_ctrl] [get_bd_pins capture_status/gpio2_io_i]
   connect_bd_net -net clock_locked_dout [get_bd_pins clock_locked/dout] [get_bd_pins rst_100m/dcm_locked] [get_bd_pins rst_160m/dcm_locked] [get_bd_pins rst_200m/dcm_locked]
   connect_bd_net -net irq_concat_dout [get_bd_pins irq_concat/dout] [get_bd_pins zynq_ultra_ps_e_0/pl_ps_irq0]
   connect_bd_net -net rfdc_clk_adc1 [get_bd_pins rfdc/clk_adc1] [get_bd_pins rst_160m/slowest_sync_clk] [get_bd_pins rfdc/m1_axis_aclk] [get_bd_pins decimator/clk] [get_bd_pins decimator_ctrl_cdc/m_axi_aclk] [get_bd_pins subset_i/aclk] [get_bd_pins subset_q/aclk] [get_bd_pins iq_combiner/aclk] [get_bd_pins capture_gate/axis_clk] [get_bd_pins capture_fifo/s_axis_aclk] [get_bd_pins stream_cdc/s_axis_aclk] [get_bd_pins rfdc_pad_i/aclk] [get_bd_pins rfdc_pad_q/aclk]
@@ -864,6 +869,8 @@ proc assert_bd_numeric_property {object_name property_name expected_value} {
 }
 
 assert_bd_numeric_property rfdc CONFIG.ADC1_Sampling_Rate 2.56
+assert_bd_numeric_property rfdc CONFIG.ADC1_Outclk_Freq 160.000
+assert_bd_numeric_property rfdc CONFIG.ADC1_Fabric_Freq 160.000
 assert_bd_property rfdc CONFIG.ADC_Data_Type10 1
 assert_bd_property rfdc CONFIG.ADC_Data_Width10 2
 assert_bd_property rfdc CONFIG.ADC_Decimation_Mode10 8
@@ -886,5 +893,7 @@ assert_bd_property subset_q CONFIG.M_TDATA_NUM_BYTES 2
 assert_bd_property subset_q CONFIG.TDATA_REMAP {tdata[15:0]}
 assert_bd_property axi_dma CONFIG.c_s_axis_s2mm_tdata_width 32
 assert_bd_property capture_status CONFIG.C_GPIO_WIDTH 32
+assert_bd_property capture_status CONFIG.C_IS_DUAL 1
+assert_bd_property capture_status CONFIG.C_GPIO2_WIDTH 32
 
-puts "ADS-B design audit passed: RFDC /8, two words/beat, PL selector-5 target /32."
+puts "ADS-B design audit passed: RFDC clock 160 MHz, RFDC /8, two words/beat, PL selector-5 target /32."
