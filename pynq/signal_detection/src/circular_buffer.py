@@ -21,8 +21,8 @@ class WindowedCircularBuffer:
         n = len(samples)
 
         with self.condition:
-            if self.count > 1000:
-                print(self.count)
+            if self.count > 50000:
+                print("Buffer has:", self.count)
 
             # Check if the new block will overwrite unprocessed data                
             if self.count + n > self.size:
@@ -57,7 +57,7 @@ class WindowedCircularBuffer:
         with self.condition:
             while self.count < self.window_size and self.active:
                 self.condition.wait()
-            return self.buffer[self.tail:self.tail + self.window_size]
+            return self.buffer[int(self.tail):int(self.tail + self.window_size)]
     
     def pop_window(self, step: int) -> None:
         # Enforce a reasonable range for step

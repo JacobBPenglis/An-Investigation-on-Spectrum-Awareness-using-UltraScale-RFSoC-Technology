@@ -5,7 +5,7 @@ import numpy.typing as npt
 @dataclass
 class Config:
     fs: float = 2e6
-    fs_mult: int = 4
+    fs_mult: int = 5
     bandwidth: float = 2e6
     f: float = 1090e6
     sig_len: int = 120e-6 * fs * fs_mult
@@ -19,13 +19,13 @@ class Config:
     )
 
 
-    BUFFER_SIZE: int = 65536
+    BUFFER_SIZE: int = 262144
     READ_BLOCK_SIZE: int = 8192
-    WINDOW_SIZE: int = 512
-    OVERLAP: int = WINDOW_SIZE/2
+    WINDOW_SIZE: int = 2048
+    OVERLAP: int = int(WINDOW_SIZE/4)
     STEP: int = WINDOW_SIZE - OVERLAP
 
-    POWER_THRESH: int = 32
-    CORRELATION_STD_THRESH: int = 4
+    MAG_THRESH: int = 62
+    CORRELATION_STD_THRESH: float = 3.5
 
 config = Config()

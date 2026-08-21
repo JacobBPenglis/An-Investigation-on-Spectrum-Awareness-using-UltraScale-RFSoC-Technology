@@ -4,7 +4,7 @@ from queue import Queue
 from datetime import datetime
 from pathlib import Path
 from config import config
-from pyModeS import decode
+import pyModeS as pms
 
 class SaveQueue:
     def __init__(self):
@@ -24,17 +24,17 @@ class SaveQueue:
             mag = np.abs(sample["iq"])
             payload = mag.reshape(-1, config.fs_mult).mean(axis=1)[16:]
             payload_bits = payload[0::2] > payload[1::2]
-            hex_str = np.packbits(payload_bits).tobytes().hex().upper()
-            message = decode(hex_str)
+            msg = np.packbits(payload_bits).tobytes().hex().upper()
 
-            if message.df == 17:
+            if pms.df(msg) == 17:
                 with open(self.record_dir / "df17_record.npy", "ab") as f:
                     np.save(f, sample["timestamp"])
                     np.save(f, sample["iq"])
-                print(message)
-                return
+                print("DF:", pms.df(msg),
+                      "\nICAO:", pms.icao(msg),
+                      "\nType Code:", pms.typecode(msg))
 
-        # with open(self.record_dir / "record.npy", "ab") as f:
-        #     np.save(f, sample["timestamp"])
-        #     np.save(f, sample["iq"])
-        # print("Buffer of size", len(sample["iq"]), "recorded")
+        with open(self.record_dir / "record.npy", "ab") as f:
+            np.save(f, sample["timestamp"])
+            np.save(f, sample["iq"])
+        print("Buffer of size", len(sample["iq"]), "recorded")
