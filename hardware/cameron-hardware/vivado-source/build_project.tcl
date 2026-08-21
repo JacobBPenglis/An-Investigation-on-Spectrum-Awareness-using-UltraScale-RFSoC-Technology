@@ -242,11 +242,7 @@ update_compile_order -fileset sources_1
 # Save project
 # ============================================================
 
-save_project_as \
-    $project_name \
-    $project_dir \
-    -force
-
+#save_project
 
 # ============================================================
 # Optional full FPGA build
