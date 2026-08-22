@@ -74,12 +74,13 @@ with a direct error if it is missing, and does not depend on Vivado's launch
 directory or a developer-specific absolute path.
 
 The RFDC tile output clock is explicitly fixed at 160 MHz. The capture status
-register identifies this source as build `0xA834`, reports the measured
-output-TVALID interval, and independently counts the RFDC fabric clock against
-the 100 MHz PS control clock. It must report about 160,000 edges/ms, and the
-fixed FIR path must report one sample every 16 fabric cycles, which is exactly
-10 MSPS. Build `0xA833` identifies the earlier selectable-decimator bitstream;
-an interval of one clock identifies its reset/bypass path.
+register identifies this source as build `0xA834`, reports the most recently
+measured output-TVALID gap, and independently counts the RFDC fabric clock
+against the 100 MHz PS control clock. It must report about 160,000 edges/ms.
+The fixed FIR path averages one output per 16 fabric cycles (10 MSPS), although
+individual gaps can be one clock when valid transfers are scheduled adjacently.
+Software therefore validates the average using complete timed DMA frames.
+Build `0xA833` identifies the earlier selectable-decimator bitstream.
 
 ## Runtime artifacts
 

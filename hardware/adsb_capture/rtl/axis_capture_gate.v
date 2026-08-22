@@ -73,9 +73,10 @@ module axis_capture_gate #(
     reg        done_axis = 1'b0;
     reg        overflow_axis = 1'b0;
 
-    // The fixed divide-by-32 FIR path must produce one complex sample every
-    // 16 cycles of the 160 MHz RFDC fabric clock. Exposing the measured
-    // interval also distinguishes stale or incorrectly configured paths.
+    // The fixed divide-by-32 FIR path averages one complex sample every 16
+    // cycles of the 160 MHz RFDC fabric clock. This register records only the
+    // most recent TVALID gap; it is diagnostic rather than an average-rate
+    // measurement because valid transfers can be scheduled adjacently.
     reg [12:0] valid_gap_counter_axis = 13'd0;
     reg [12:0] valid_interval_axis = 13'd0;
 

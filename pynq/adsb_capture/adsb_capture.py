@@ -14,6 +14,7 @@ import json
 import math
 import socket
 import time
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Tuple
@@ -66,6 +67,9 @@ except ImportError:  # Allow direct execution on the board.
 DEFAULT_CENTRE_FREQUENCY_MHZ = 1090.0
 REFERENCE_CLOCK_MHZ = 409.6
 DEFAULT_ADC_TILE = 1  # XM500 J2, 1-4 GHz path, ADC225_T1_Ch0.
+OUTPUT_RATE_PROBE_SAMPLES = 1_000_000
+OUTPUT_RATE_PROBE_REPEATS = 3
+OUTPUT_RATE_PROBE_RTOL = 0.20
 
 
 def unpack_iq(words: np.ndarray, normalize: bool = False) -> np.ndarray:
@@ -119,6 +123,7 @@ class AdsbCapture:
         self.adc_tile = self.rfdc.adc_tiles[int(adc_tile_index)]
         self.adc_block = self.adc_tile.blocks[0]
         self._arm_toggle = 0
+        self._verified_output_sample_rate_hz = float("nan")
 
         status_word = int(self.status.channel1.read())
         hardware_build_id = (status_word >> 16) & 0xFFFF
@@ -251,6 +256,50 @@ class AdsbCapture:
                 + ", ".join(fir_mismatches)
             )
 
+    def _measure_output_sample_rate(
+        self,
+        samples: int = OUTPUT_RATE_PROBE_SAMPLES,
+        repeats: int = OUTPUT_RATE_PROBE_REPEATS,
+    ) -> float:
+        """Measure average output-word rate using complete timed DMA frames.
+
+        The capture gate counts accepted output words and asserts TLAST after
+        exactly ``samples`` transfers. Timing from arm to DMA completion
+        therefore measures the average stream rate even when TVALID is bursty.
+        The fastest repeat minimizes Linux scheduling/interrupt latency, which
+        can only make an individual measurement appear slower.
+        """
+        samples = int(samples)
+        repeats = int(repeats)
+        if samples <= 0 or repeats <= 0:
+            raise ValueError("rate-probe samples and repeats must be positive")
+
+        measured_rates_hz = []
+        for _ in range(repeats):
+            buffer = allocate(shape=(samples,), dtype=np.uint32)
+            try:
+                self.dma.recvchannel.transfer(buffer)
+                self.control.channel1.write(samples, 0xFFFFFFFF)
+                self._arm_toggle ^= 1
+                started = time.monotonic()
+                self.control.channel2.write(self._arm_toggle, 0x1)
+                self.dma.recvchannel.wait()
+                elapsed = time.monotonic() - started
+
+                status = int(self.status.channel1.read())
+                done = bool(status & 0x1)
+                overflow = bool(status & 0x2)
+                if overflow or not done:
+                    raise RuntimeError(
+                        "Output-rate probe produced invalid capture status "
+                        f"0x{status:08x}; inspect DMA/FIFO backpressure."
+                    )
+                measured_rates_hz.append(samples / max(elapsed, 1e-9))
+            finally:
+                buffer.freebuffer()
+
+        return max(measured_rates_hz)
+
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
         # Decimation and fabric width affect the physical PL interface and are
         # therefore fixed in Vivado. Do not rewrite them at runtime. A driver
@@ -288,9 +337,11 @@ class AdsbCapture:
         # the HWH. There is intentionally no run-time selector/register write.
         # 2.56 GSPS / 8 / 32 = 10 MSPS complex output.
 
-        # The final stream is clocked at 160 MHz and the fixed FIR path must
-        # assert TVALID once every 16 cycles: 160 MHz / 16 = 10 MSPS. This measures
-        # the implemented datapath rather than trusting register readback.
+        # The status register exposes the most recent gap between TVALID
+        # transfers. It is useful for diagnosing the stream, but it is not an
+        # average-rate meter: a legal burst can contain adjacent transfers and
+        # therefore leave a final gap of one clock. Verify rate with complete
+        # timed DMA frames instead.
         deadline = time.monotonic() + 0.5
         valid_interval = 0
         while time.monotonic() < deadline:
@@ -299,29 +350,10 @@ class AdsbCapture:
             if valid_interval:
                 break
             time.sleep(0.005)
-        if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
-            measured_rate_hz = 160_000_000 / max(valid_interval, 1)
-            if valid_interval == 1:
-                detail = (
-                    " The one-clock interval is the signature of a bypass or "
-                    "non-decimating path; the legacy xsg_bwselector resets to "
-                    "selector zero. Check that implementation completed and "
-                    "that the deployed .bit came from the same fixed-FIR run "
-                    "as the HWH."
-                )
-            elif valid_interval == 128:
-                detail = (
-                    " An interval of 128 identifies the former deepest /256 "
-                    "PL path and explains the observed x8 FFT-frequency error."
-                )
-            else:
-                detail = ""
+        if valid_interval == 0:
             raise RuntimeError(
-                "Implemented PL sample rate is wrong: output TVALID interval "
-                f"is {valid_interval} fabric clocks "
-                f"(~{measured_rate_hz / 1e6:.3f} MSPS), expected "
-                f"{EXPECTED_OUTPUT_VALID_INTERVAL} clocks (10.000 MSPS)."
-                + detail
+                "No output TVALID transfers were observed from the fixed FIR "
+                "path. Inspect FIR clocks, resets and AXI-stream connections."
             )
 
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
@@ -329,6 +361,34 @@ class AdsbCapture:
             raise RuntimeError(
                 f"RFDC reports {sampling_ghz:.6f} GSPS, expected 2.560 GSPS. "
                 "Check the Vivado RFDC PLL and the 409.6 MHz xrfclk setup."
+            )
+
+        measured_rate_hz = self._measure_output_sample_rate()
+        if not np.isclose(
+            measured_rate_hz,
+            IQ_SAMPLE_RATE_HZ,
+            rtol=OUTPUT_RATE_PROBE_RTOL,
+            atol=0,
+        ):
+            raise RuntimeError(
+                "Implemented PL sample rate is wrong: timed DMA frames measured "
+                f"approximately {measured_rate_hz / 1e6:.3f} MSPS, expected "
+                f"{IQ_SAMPLE_RATE_HZ / 1e6:.3f} MSPS (tolerance "
+                f"{OUTPUT_RATE_PROBE_RTOL * 100:.0f}%). The most recent TVALID "
+                f"gap was {valid_interval} fabric clocks."
+            )
+        self._verified_output_sample_rate_hz = measured_rate_hz
+
+        if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
+            warnings.warn(
+                "The most recent output TVALID gap was "
+                f"{valid_interval} fabric clocks rather than the nominal "
+                f"average of {EXPECTED_OUTPUT_VALID_INTERVAL}, but timed DMA "
+                f"frames verified {measured_rate_hz / 1e6:.3f} MSPS. The fixed "
+                "FIR output is being accepted because individual TVALID gaps "
+                "can reflect burst scheduling rather than average sample rate.",
+                RuntimeWarning,
+                stacklevel=2,
             )
 
     @property
@@ -347,8 +407,13 @@ class AdsbCapture:
 
     @property
     def output_valid_interval(self) -> int:
-        """Return fabric-clock cycles per final complex output sample."""
+        """Return the most recently observed gap between output transfers."""
         return (int(self.status.channel1.read()) >> 3) & 0x1FFF
+
+    @property
+    def verified_output_sample_rate_hz(self) -> float:
+        """Return the average output rate measured using timed DMA frames."""
+        return self._verified_output_sample_rate_hz
 
     @property
     def fabric_clock_hz(self) -> int:
@@ -423,6 +488,7 @@ class AdsbCapture:
             "pl_decimator_kind": PL_DECIMATOR_KIND,
             "hardware_build_id": f"0x{self.hardware_build_id:04X}",
             "output_valid_interval": self.output_valid_interval,
+            "verified_output_sample_rate_hz": self.verified_output_sample_rate_hz,
             "utc_unix_ns": time.time_ns(),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")

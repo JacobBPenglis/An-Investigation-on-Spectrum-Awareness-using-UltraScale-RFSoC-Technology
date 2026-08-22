@@ -53,10 +53,12 @@ At startup the runtime requires fixed-FIR hardware build ID `0xA834`, checks tha
 HWH records a 160 MHz RFDC output/fabric clock, verifies the two fixed
 `JACOBS_FIR_I/Q` FIR Compiler instances, and independently measures the RFDC
 fabric clock against the 100 MHz PS clock. It also measures the final
-AXI-stream TVALID interval. The required result is about 160,000 fabric edges
-per millisecond and one valid sample every 16 cycles (10 MSPS). Initialization
-stops before an FFT if the HWH describes the former selectable decimator, the
-deployed clock is wrong, or the final stream rate is wrong.
+stream rate using three complete timed DMA frames. The required result is about
+160,000 fabric edges per millisecond and a measured average of 10 MSPS. The
+most recent TVALID gap remains available as a diagnostic, but is not treated as
+the sample period because the fixed FIR can schedule adjacent valid transfers
+in a burst. Initialization stops before an FFT if the HWH describes the former
+selectable decimator, the deployed clock is wrong, or the timed rate is wrong.
 
 ## Board deployment
 
@@ -230,5 +232,6 @@ plt.grid(True)
 | DMA wait does not complete | Capture-gate `TLAST`, DMA start order, interrupt metadata, and stream/reset connections |
 | Overflow status is set | FIFO depth, DMA `tready`, and the 200 MHz HP0 memory path |
 | I/Q is swapped or spectrum is reversed | Combiner order: I in bits `[15:0]`, Q in bits `[31:16]`; RFDC `m10_axis` real and `m11_axis` imaginary |
-| Build ID is `0xA833`, or TVALID interval is 1 | A fixed-FIR HWH has been paired with the older selectable-decimator bitstream, or implementation was not regenerated; rebuild in `build_rfdc8_fir32_clk160_v2` and deploy its matched `.bit`/`.hwh` pair |
-| A 0.5 MHz offset is displayed as about 4 MHz | Hardware build ID must be `0xA834`; HWH and measured fabric clock must both be 160 MHz; output TVALID interval must be 16 |
+| Build ID is `0xA833` | A fixed-FIR HWH has been paired with the older selectable-decimator bitstream, or implementation was not regenerated; rebuild in `build_rfdc8_fir32_clk160_v2` and deploy its matched `.bit`/`.hwh` pair |
+| Most recent TVALID gap is 1 | This can be an adjacent transfer within the fixed-FIR output schedule; use `verified_output_sample_rate_hz`, which times complete DMA frames, to validate the average rate |
+| A 0.5 MHz offset is displayed as about 4 MHz | Hardware build ID must be `0xA834`; HWH and measured fabric clock must both be 160 MHz; timed DMA rate must be approximately 10 MSPS |
