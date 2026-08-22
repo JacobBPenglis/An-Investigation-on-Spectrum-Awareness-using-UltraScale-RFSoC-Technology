@@ -40,7 +40,7 @@ primary notebook from its parent directory beside it.
 | `../adsb_rfsoc_live.ipynb` | Primary live board-side Mode S detector/decoder and hardware-validation notebook for the current fixed-FIR design |
 | `adsb_live_processing.ipynb` | Earlier live-processing draft retained for reference |
 | `adsb_capture.py` | Overlay loading, RFDC setup, DMA capture, file output, and UDP transmission |
-| `adsb_decoder.py` | Pure-NumPy preamble detector, PPM demodulator, CRC validator, DF17/DF18 field decoder, and CPR tracker |
+| `adsb_decoder.py` | Pure-NumPy preamble detector, PPM demodulator, CRC validator with marked rejected-candidate output, DF17/DF18 field decoder, and CPR tracker |
 | `iq_protocol.py` | Shared sample-rate and UDP packet definitions |
 | `receive_iq_udp.py` | Host-side UDP receiver |
 | `bitstream/adsb_capture.bit` | FPGA configuration |
@@ -108,8 +108,9 @@ RFDC and PL decimation
   -> DMA frame in ZCU111 DDR
   -> Mode S preamble search on the A53
   -> 1 Mbit/s PPM demodulation
-  -> CRC-valid DF17/DF18 messages
-  -> callsign, altitude, velocity and airborne CPR tracking
+  -> CRC validation
+     -> valid DF17/DF18: interpretation and aircraft tracking
+     -> rejected candidate: raw message display with untrusted fields
 ```
 
 The detector uses only NumPy and the local `adsb_decoder.py`; it does not
@@ -118,8 +119,10 @@ model. An offline synthetic self-test in the notebook verifies known callsign,
 altitude and even/odd CPR messages before the overlay is loaded.
 
 The default live cell runs for 60 seconds. Set `LIVE_SECONDS = None` to run
-until interrupted. Optional JSON Lines logging writes decoded messages to the
-board filesystem.
+until interrupted. Its recent-message display includes both `CRC OK` and
+`CRC FAIL / UNTRUSTED` entries with the raw demodulated message and CRC
+remainder. Rejected messages never update the aircraft tracker. Optional JSON
+Lines logging writes only CRC-valid decoded messages to the board filesystem.
 
 The current overlay uses simple S2MM DMA rather than cyclic or scatter/gather
 DMA. The notebook's producer thread overlaps the next finite DMA capture with
