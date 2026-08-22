@@ -14,6 +14,7 @@ import json
 import math
 import socket
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -29,8 +30,11 @@ try:
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
+        LEGACY_HARDWARE_BUILD_ID,
         PL_DECIMATION,
+        PL_DECIMATOR_KIND,
         PL_DECIMATION_SELECT,
+        PL_FIR_INSTANCE_NAMES,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
         RFDC_FABRIC_CLOCK_HZ,
@@ -45,8 +49,11 @@ except ImportError:  # Allow direct execution on the board.
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
+        LEGACY_HARDWARE_BUILD_ID,
         PL_DECIMATION,
+        PL_DECIMATOR_KIND,
         PL_DECIMATION_SELECT,
+        PL_FIR_INSTANCE_NAMES,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
         RFDC_FABRIC_CLOCK_HZ,
@@ -88,6 +95,8 @@ class AdsbCapture:
             raise FileNotFoundError(
                 f"Expected matching overlay files {bitfile_path} and {hwh_path}"
             )
+        self.bitfile_path = bitfile_path
+        self.hwh_path = hwh_path
 
         # Load order: HWH metadata, RF reference clocks, then PL configuration.
         self.overlay = Overlay(str(bitfile_path), download=False)
@@ -96,10 +105,16 @@ class AdsbCapture:
         self.overlay.download()
 
         # Attribute names correspond to the Vivado block instance names.
+        required_ip = {"rfdc", "axi_dma", "capture_control", "capture_status"}
+        missing_ip = required_ip - set(self.overlay.ip_dict)
+        if missing_ip:
+            raise RuntimeError(
+                "The HWH is missing PYNQ-controlled ADS-B IP instances: "
+                f"{sorted(missing_ip)}"
+            )
         self.dma = self.overlay.axi_dma
         self.control = self.overlay.capture_control
         self.status = self.overlay.capture_status
-        self.decimator = self.overlay.decimator
         self.rfdc = self.overlay.rfdc
         self.adc_tile = self.rfdc.adc_tiles[int(adc_tile_index)]
         self.adc_block = self.adc_tile.blocks[0]
@@ -108,11 +123,21 @@ class AdsbCapture:
         status_word = int(self.status.channel1.read())
         hardware_build_id = (status_word >> 16) & 0xFFFF
         if hardware_build_id != HARDWARE_BUILD_ID:
+            if hardware_build_id == LEGACY_HARDWARE_BUILD_ID:
+                raise RuntimeError(
+                    "The HWH describes the fixed-FIR ADS-B design, but the "
+                    f"programmed FPGA reports legacy build ID "
+                    f"0x{hardware_build_id:04x}. This normally means the new "
+                    ".hwh was paired with the older selectable-decimator .bit. "
+                    "Re-run synthesis/implementation in "
+                    "build_rfdc8_fir32_clk160_v2, then deploy its .bit and "
+                    ".hwh together. Do not change the expected sample rate."
+                )
             raise RuntimeError(
-                "The programmed FPGA is not the verified RFDC8/PL32 build: "
+                "The programmed FPGA is not the fixed-FIR RFDC8/PL32 build: "
                 f"hardware ID 0x{hardware_build_id:04x}, expected "
                 f"0x{HARDWARE_BUILD_ID:04x}. Deploy the matched .bit and "
-                ".hwh generated from build_rfdc8_pl32_clk160."
+                ".hwh generated from build_rfdc8_fir32_clk160_v2."
             )
 
         deadline = time.monotonic() + 0.25
@@ -135,7 +160,7 @@ class AdsbCapture:
         self._configure_receiver(centre_frequency_mhz)
 
     def _validate_hwh_metadata(self) -> None:
-        """Reject an HWH whose implemented RFDC interface is not 160 MHz."""
+        """Reject metadata that does not describe the current fixed-FIR design."""
         try:
             parameters = self.overlay.ip_dict["rfdc"]["parameters"]
         except (KeyError, TypeError) as exc:
@@ -164,6 +189,66 @@ class AdsbCapture:
             raise RuntimeError(
                 "The HWH describes the wrong RFDC clock/rate interface: "
                 + ", ".join(mismatches)
+            )
+
+        # The latest adsb_capture_bd.tcl replaced the AXI-controlled
+        # xsg_bwselector with separate, fixed divide-by-32 FIR Compiler blocks.
+        # Validate the HWH itself so a stale bitstream/HWH pair cannot reach a
+        # register write for an IP that is no longer present.
+        try:
+            root = ET.parse(self.hwh_path).getroot()
+        except (ET.ParseError, OSError) as exc:
+            raise RuntimeError(f"Could not parse HWH metadata: {self.hwh_path}") from exc
+
+        modules = {}
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "MODULE":
+                continue
+            instance = element.attrib.get("INSTANCE", "")
+            if not instance:
+                continue
+            parameters = {}
+            for child in element.iter():
+                if child.tag.rsplit("}", 1)[-1] == "PARAMETER":
+                    name = child.attrib.get("NAME")
+                    if name:
+                        parameters[name.lower()] = child.attrib.get("VALUE", "")
+            modules[instance.lower()] = {
+                "vlnv": element.attrib.get("VLNV", ""),
+                "parameters": parameters,
+            }
+
+        missing_firs = [
+            name for name in PL_FIR_INSTANCE_NAMES if name.lower() not in modules
+        ]
+        if missing_firs:
+            raise RuntimeError(
+                "The HWH does not describe the latest fixed-FIR ADS-B path; "
+                f"missing instances {missing_firs}. Rebuild/deploy the matched "
+                ".bit and .hwh generated from the updated adsb_capture_bd.tcl."
+            )
+
+        fir_mismatches = []
+        for name in PL_FIR_INSTANCE_NAMES:
+            module = modules[name.lower()]
+            if "fir_compiler" not in module["vlnv"].lower():
+                fir_mismatches.append(f"{name} VLNV={module['vlnv']}")
+            parameters = module["parameters"]
+            checks = {
+                "decimation_rate": "32",
+                "filter_type": "Decimation",
+                "output_width": "16",
+            }
+            for parameter, wanted in checks.items():
+                actual = parameters.get(parameter)
+                if actual is not None and str(actual).lower() != wanted.lower():
+                    fir_mismatches.append(
+                        f"{name} {parameter}={actual} (expected {wanted})"
+                    )
+        if fir_mismatches:
+            raise RuntimeError(
+                "The HWH fixed-FIR configuration is incompatible: "
+                + ", ".join(fir_mismatches)
             )
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
@@ -199,19 +284,12 @@ class AdsbCapture:
         }
         self.adc_block.UpdateEvent(xrfdc.EVENT_MIXER)
 
-        # In xsg_bwselector, selector 5 is total PL decimation by 32: the
-        # mandatory two-sample coarse stage followed by four divide-by-2 FIRs.
+        # PL decimation is fixed in the two FIR Compiler instances described by
+        # the HWH. There is intentionally no run-time selector/register write.
         # 2.56 GSPS / 8 / 32 = 10 MSPS complex output.
-        self.decimator.write(0x00, PL_DECIMATION_SELECT)
-        reported_selector = int(self.decimator.read(0x00))
-        if reported_selector != PL_DECIMATION_SELECT:
-            raise RuntimeError(
-                f"PL decimator selector read back as {reported_selector}; "
-                f"expected {PL_DECIMATION_SELECT}."
-            )
 
-        # The final stream is clocked at 160 MHz and selector 5 must assert
-        # TVALID once every 16 cycles: 160 MHz / 16 = 10 MSPS.  This measures
+        # The final stream is clocked at 160 MHz and the fixed FIR path must
+        # assert TVALID once every 16 cycles: 160 MHz / 16 = 10 MSPS. This measures
         # the implemented datapath rather than trusting register readback.
         deadline = time.monotonic() + 0.5
         valid_interval = 0
@@ -223,13 +301,27 @@ class AdsbCapture:
             time.sleep(0.005)
         if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
             measured_rate_hz = 160_000_000 / max(valid_interval, 1)
+            if valid_interval == 1:
+                detail = (
+                    " The one-clock interval is the signature of a bypass or "
+                    "non-decimating path; the legacy xsg_bwselector resets to "
+                    "selector zero. Check that implementation completed and "
+                    "that the deployed .bit came from the same fixed-FIR run "
+                    "as the HWH."
+                )
+            elif valid_interval == 128:
+                detail = (
+                    " An interval of 128 identifies the former deepest /256 "
+                    "PL path and explains the observed x8 FFT-frequency error."
+                )
+            else:
+                detail = ""
             raise RuntimeError(
                 "Implemented PL sample rate is wrong: output TVALID interval "
                 f"is {valid_interval} fabric clocks "
                 f"(~{measured_rate_hz / 1e6:.3f} MSPS), expected "
-                f"{EXPECTED_OUTPUT_VALID_INTERVAL} clocks (10.000 MSPS). "
-                "An interval of 128 identifies the deepest /256 PL path and "
-                "explains the observed x8 FFT-frequency error."
+                f"{EXPECTED_OUTPUT_VALID_INTERVAL} clocks (10.000 MSPS)."
+                + detail
             )
 
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
@@ -242,6 +334,11 @@ class AdsbCapture:
     @property
     def centre_frequency_mhz(self) -> float:
         return abs(float(self.adc_block.MixerSettings["Freq"]))
+
+    @property
+    def pl_decimator_kind(self) -> str:
+        """Return the implemented programmable-logic decimator variant."""
+        return PL_DECIMATOR_KIND
 
     @property
     def hardware_build_id(self) -> int:
@@ -323,6 +420,7 @@ class AdsbCapture:
             "rfdc_fabric_clock_hz": self.fabric_clock_hz,
             "pl_decimation": PL_DECIMATION,
             "pl_decimation_select": PL_DECIMATION_SELECT,
+            "pl_decimator_kind": PL_DECIMATOR_KIND,
             "hardware_build_id": f"0x{self.hardware_build_id:04X}",
             "output_valid_interval": self.output_valid_interval,
             "utc_unix_ns": time.time_ns(),
