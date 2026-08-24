@@ -3,7 +3,7 @@ import numpy.typing as npt
 from queue import Queue
 from datetime import datetime
 from pathlib import Path
-from config import config
+import config
 import pyModeS as pms
 
 class SaveQueue:
@@ -26,15 +26,12 @@ class SaveQueue:
             payload_bits = payload[0::2] > payload[1::2]
             msg = np.packbits(payload_bits).tobytes().hex().upper()
 
-            if pms.df(msg) == 17:
-                with open(self.record_dir / "df17_record.npy", "ab") as f:
-                    np.save(f, sample["timestamp"])
-                    np.save(f, sample["iq"])
-                print("DF:", pms.df(msg),
-                      "\nICAO:", pms.icao(msg),
-                      "\nType Code:", pms.typecode(msg))
+            # Ignore signals with an invalid CRC
+            if pms.crc(msg) != 0:
+                return
 
-        with open(self.record_dir / "record.npy", "ab") as f:
-            np.save(f, sample["timestamp"])
-            np.save(f, sample["iq"])
-        print("Buffer of size", len(sample["iq"]), "recorded")
+            # Save signal to file
+            with open(self.record_dir / "record.npy", "ab") as f:
+                np.save(f, sample["timestamp"])
+                np.save(f, sample["iq"])
+            print(f"DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, Type Code: {pms.adsb.typecode(msg)}")

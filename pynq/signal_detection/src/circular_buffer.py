@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.typing as npt
 import threading
+import time
 
 class WindowedCircularBuffer:
     def __init__(self, size: int, window_size: int):
@@ -15,18 +16,28 @@ class WindowedCircularBuffer:
         self.count = 0
         self.condition = threading.Condition()
         self.active = True
+        self.draining = False
+
+        # Timing statistics
+        self.start_time = time.perf_counter()
+        self.down_time = 0
 
     def push_samples(self, samples: npt.NDArray) -> None:
         # Get the size of the block to be written to the buffer
         n = len(samples)
 
         with self.condition:
-            if self.count > 50000:
-                print("Buffer has:", self.count)
-
-            # Check if the new block will overwrite unprocessed data                
+            # Check if the new block will overwrite unprocessed data.
+            # If so, let the buffer drain before continuing
             if self.count + n > self.size:
-                raise OverflowError("Attempted to overwrite unprocessed data")
+                start_draining = time.perf_counter()
+                print("Buffer draining")
+                while self.draining:
+                    self.condition.wait()
+                down_time = time.perf_counter() - start_draining
+                self.down_time += down_time
+                print(f"Buffer inactive for {down_time/1e3:.2f}ms")
+                return
 
             # No wrap around
             new_head = self.head + n
@@ -75,11 +86,20 @@ class WindowedCircularBuffer:
                 self.tail -= self.size
             self.count -= step
 
+            # Wake producer if done draining the buffer
+            if self.draining and self.count < self.window_size:
+                self.condition.notify_all()
+
     def close(self) -> None:
         with self.condition:
             self.active = False
+            self.display_timing_stats()
             self.condition.notify_all()
 
     def is_active(self) -> bool:
         with self.condition:
             return self.active
+
+    def display_timing_stats(self) -> None:
+        total_time = time.perf_counter() - self.start_time
+        print(f"Buffer active for {(1 - self.down_time/total_time)*100:.2f}% of the {total_time/60:.2f} minutes it was open")
