@@ -31,7 +31,9 @@ module axis_capture_gate #(
 
     input  wire [31:0]              frame_samples_ctrl,
     input  wire                     arm_toggle_ctrl,
-    // [31:16] identifies the verified RFDC8/PL32 design.
+    // [31:16] identifies the fixed-FIR RFDC8/PL32 design.  This ID changed
+    // when the selectable xsg_bwselector was replaced so a new HWH cannot be
+    // silently paired with the older bitstream.
     // [15:3] reports the most recently measured number of axis_clk cycles
     //        between input TVALID pulses.
     // [2:0]  remains {busy, overflow, done}.
@@ -71,10 +73,10 @@ module axis_capture_gate #(
     reg        done_axis = 1'b0;
     reg        overflow_axis = 1'b0;
 
-    // The selector-5 path must produce one complex sample every 16 cycles of
-    // the 160 MHz RFDC fabric clock.  Exposing the measured interval makes a
-    // stale/deepest-decimator bitstream immediately distinguishable: that
-    // path reports 128 and produces the observed 1.25 MSPS stream.
+    // The fixed divide-by-32 FIR path averages one complex sample every 16
+    // cycles of the 160 MHz RFDC fabric clock. This register records only the
+    // most recent TVALID gap; it is diagnostic rather than an average-rate
+    // measurement because valid transfers can be scheduled adjacently.
     reg [12:0] valid_gap_counter_axis = 13'd0;
     reg [12:0] valid_interval_axis = 13'd0;
 
@@ -258,7 +260,7 @@ module axis_capture_gate #(
     end
 
     assign status_ctrl = {
-        16'hA833,
+        16'hA834,
         valid_interval_sync,
         busy_sync,
         overflow_sync,

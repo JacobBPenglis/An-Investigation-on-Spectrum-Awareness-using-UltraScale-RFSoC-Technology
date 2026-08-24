@@ -1,10 +1,10 @@
 """Pure-NumPy Mode S / ADS-B detection and decoding for PYNQ.
 
 The detector consumes complex baseband I/Q samples.  It searches magnitude
-squared for the 8 us Mode S preamble, demodulates the following 1 Mbit/s
-pulse-position-modulated data and only returns CRC-valid DF17/DF18 extended
-squitters by default.  No host-side service or third-party ADS-B package is
-required.
+squared for the 8 us Mode S preamble and demodulates the following 1 Mbit/s
+pulse-position-modulated data. CRC-valid DF17/DF18 extended squitters and
+plausible CRC-rejected candidates are returned separately. No host-side
+service or third-party ADS-B package is required.
 
 At the overlay's 10 MSPS output rate, a 0.5 us PPM half-symbol is five
 samples, the preamble is 80 samples and a 112-bit extended squitter occupies
@@ -65,6 +65,7 @@ class DetectionBatch:
 
     messages: Tuple[Dict[str, object], ...]
     stats: DetectionStats
+    rejected_messages: Tuple[Dict[str, object], ...] = ()
 
 
 def mode_s_crc(message: bytes) -> int:
@@ -165,10 +166,12 @@ def decode_adsb_message(message: bytes) -> Dict[str, object]:
 
     bits = _bits_from_bytes(message)
     downlink_format = _uint(bits, 0, 5)
+    crc_remainder = mode_s_crc(message)
     result: Dict[str, object] = {
         "raw": message.hex().upper(),
         "df": downlink_format,
-        "crc_ok": mode_s_crc(message) == 0,
+        "crc_ok": crc_remainder == 0,
+        "crc_remainder": f"{crc_remainder:06X}",
         "parity": message[-3:].hex().upper(),
     }
 
@@ -441,8 +444,13 @@ class AdsbDetector:
         candidate: int,
         sample_count: int,
         noise_power: float,
-    ) -> Optional[Tuple[bytes, int, float]]:
-        best: Optional[Tuple[bytes, int, float]] = None
+    ) -> Tuple[
+        Optional[Tuple[bytes, int, float, int]],
+        Optional[Tuple[bytes, int, float, int]],
+    ]:
+        """Return the best CRC-valid and CRC-rejected decodes for a candidate."""
+        best_valid: Optional[Tuple[bytes, int, float, int]] = None
+        best_rejected: Optional[Tuple[bytes, int, float, int]] = None
         # Check a complete half-symbol around the preamble peak.  This absorbs
         # fractional timing, filter ringing and a neighbouring correlation
         # sample winning the preamble score.
@@ -468,13 +476,18 @@ class AdsbDetector:
             )
             message = np.packbits(bits).tobytes()
             if (
-                downlink_format in self.accepted_formats
-                and mode_s_crc(message) == 0
-                and confidence >= self.min_median_bit_confidence
+                downlink_format not in self.accepted_formats
+                or confidence < self.min_median_bit_confidence
             ):
-                if best is None or confidence > best[2]:
-                    best = (message, start, confidence)
-        return best
+                continue
+            crc_remainder = mode_s_crc(message)
+            decoded = (message, start, confidence, crc_remainder)
+            if crc_remainder == 0:
+                if best_valid is None or confidence > best_valid[2]:
+                    best_valid = decoded
+            elif best_rejected is None or confidence > best_rejected[2]:
+                best_rejected = decoded
+        return best_valid, best_rejected
 
     def detect(
         self,
@@ -562,6 +575,7 @@ class AdsbDetector:
                 candidates.append(best_index)
 
         messages: List[Dict[str, object]] = []
+        rejected_messages: List[Dict[str, object]] = []
         evaluated_candidates: List[int] = []
         rejected = 0
         skip_before = -1
@@ -569,16 +583,17 @@ class AdsbDetector:
             if candidate < skip_before:
                 continue
             evaluated_candidates.append(candidate)
-            decoded = self._try_candidate(
+            decoded, crc_rejected_decode = self._try_candidate(
                 half_energy,
                 candidate,
                 sample_count,
                 noise_power,
             )
             if decoded is None:
-                rejected += 1
+                decoded = crc_rejected_decode
+            if decoded is None:
                 continue
-            message_bytes, message_start, confidence = decoded
+            message_bytes, message_start, confidence, crc_remainder = decoded
             message = decode_adsb_message(message_bytes)
             pulse_value = float(pulse_mean[candidate])
             quiet_value = max(float(quiet_mean[candidate]), np.finfo(np.float32).tiny)
@@ -599,7 +614,17 @@ class AdsbDetector:
                     frame_start_ns
                     + round(message_start / self.sample_rate_hz * 1e9)
                 )
-            messages.append(message)
+            if crc_remainder == 0:
+                messages.append(message)
+            else:
+                rejected += 1
+                message.update(
+                    {
+                        "rejection_reason": "CRC",
+                        "fields_untrusted": True,
+                    }
+                )
+                rejected_messages.append(message)
             skip_before = (
                 message_start
                 + self.preamble_samples
@@ -617,7 +642,11 @@ class AdsbDetector:
             accepted_messages=len(messages),
             candidate_samples=tuple(evaluated_candidates),
         )
-        return DetectionBatch(tuple(messages), stats)
+        return DetectionBatch(
+            tuple(messages),
+            stats,
+            tuple(rejected_messages),
+        )
 
 
 def update_tracker(

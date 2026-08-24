@@ -14,6 +14,8 @@ import json
 import math
 import socket
 import time
+import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -29,8 +31,11 @@ try:
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
+        LEGACY_HARDWARE_BUILD_ID,
         PL_DECIMATION,
+        PL_DECIMATOR_KIND,
         PL_DECIMATION_SELECT,
+        PL_FIR_INSTANCE_NAMES,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
         RFDC_FABRIC_CLOCK_HZ,
@@ -45,8 +50,11 @@ except ImportError:  # Allow direct execution on the board.
         EXPECTED_OUTPUT_VALID_INTERVAL,
         HARDWARE_BUILD_ID,
         IQ_SAMPLE_RATE_HZ,
+        LEGACY_HARDWARE_BUILD_ID,
         PL_DECIMATION,
+        PL_DECIMATOR_KIND,
         PL_DECIMATION_SELECT,
+        PL_FIR_INSTANCE_NAMES,
         RFDC_DECIMATION,
         RFDC_FABRIC_WORDS,
         RFDC_FABRIC_CLOCK_HZ,
@@ -59,6 +67,9 @@ except ImportError:  # Allow direct execution on the board.
 DEFAULT_CENTRE_FREQUENCY_MHZ = 1090.0
 REFERENCE_CLOCK_MHZ = 409.6
 DEFAULT_ADC_TILE = 1  # XM500 J2, 1-4 GHz path, ADC225_T1_Ch0.
+OUTPUT_RATE_PROBE_SAMPLES = 1_000_000
+OUTPUT_RATE_PROBE_REPEATS = 3
+OUTPUT_RATE_PROBE_RTOL = 0.20
 
 
 def unpack_iq(words: np.ndarray, normalize: bool = False) -> np.ndarray:
@@ -88,6 +99,8 @@ class AdsbCapture:
             raise FileNotFoundError(
                 f"Expected matching overlay files {bitfile_path} and {hwh_path}"
             )
+        self.bitfile_path = bitfile_path
+        self.hwh_path = hwh_path
 
         # Load order: HWH metadata, RF reference clocks, then PL configuration.
         self.overlay = Overlay(str(bitfile_path), download=False)
@@ -96,23 +109,40 @@ class AdsbCapture:
         self.overlay.download()
 
         # Attribute names correspond to the Vivado block instance names.
+        required_ip = {"rfdc", "axi_dma", "capture_control", "capture_status"}
+        missing_ip = required_ip - set(self.overlay.ip_dict)
+        if missing_ip:
+            raise RuntimeError(
+                "The HWH is missing PYNQ-controlled ADS-B IP instances: "
+                f"{sorted(missing_ip)}"
+            )
         self.dma = self.overlay.axi_dma
         self.control = self.overlay.capture_control
         self.status = self.overlay.capture_status
-        self.decimator = self.overlay.decimator
         self.rfdc = self.overlay.rfdc
         self.adc_tile = self.rfdc.adc_tiles[int(adc_tile_index)]
         self.adc_block = self.adc_tile.blocks[0]
         self._arm_toggle = 0
+        self._verified_output_sample_rate_hz = float("nan")
 
         status_word = int(self.status.channel1.read())
         hardware_build_id = (status_word >> 16) & 0xFFFF
         if hardware_build_id != HARDWARE_BUILD_ID:
+            if hardware_build_id == LEGACY_HARDWARE_BUILD_ID:
+                raise RuntimeError(
+                    "The HWH describes the fixed-FIR ADS-B design, but the "
+                    f"programmed FPGA reports legacy build ID "
+                    f"0x{hardware_build_id:04x}. This normally means the new "
+                    ".hwh was paired with the older selectable-decimator .bit. "
+                    "Re-run synthesis/implementation in "
+                    "build_rfdc8_fir32_clk160_v2, then deploy its .bit and "
+                    ".hwh together. Do not change the expected sample rate."
+                )
             raise RuntimeError(
-                "The programmed FPGA is not the verified RFDC8/PL32 build: "
+                "The programmed FPGA is not the fixed-FIR RFDC8/PL32 build: "
                 f"hardware ID 0x{hardware_build_id:04x}, expected "
                 f"0x{HARDWARE_BUILD_ID:04x}. Deploy the matched .bit and "
-                ".hwh generated from build_rfdc8_pl32_clk160."
+                ".hwh generated from build_rfdc8_fir32_clk160_v2."
             )
 
         deadline = time.monotonic() + 0.25
@@ -135,7 +165,7 @@ class AdsbCapture:
         self._configure_receiver(centre_frequency_mhz)
 
     def _validate_hwh_metadata(self) -> None:
-        """Reject an HWH whose implemented RFDC interface is not 160 MHz."""
+        """Reject metadata that does not describe the current fixed-FIR design."""
         try:
             parameters = self.overlay.ip_dict["rfdc"]["parameters"]
         except (KeyError, TypeError) as exc:
@@ -165,6 +195,110 @@ class AdsbCapture:
                 "The HWH describes the wrong RFDC clock/rate interface: "
                 + ", ".join(mismatches)
             )
+
+        # The latest adsb_capture_bd.tcl replaced the AXI-controlled
+        # xsg_bwselector with separate, fixed divide-by-32 FIR Compiler blocks.
+        # Validate the HWH itself so a stale bitstream/HWH pair cannot reach a
+        # register write for an IP that is no longer present.
+        try:
+            root = ET.parse(self.hwh_path).getroot()
+        except (ET.ParseError, OSError) as exc:
+            raise RuntimeError(f"Could not parse HWH metadata: {self.hwh_path}") from exc
+
+        modules = {}
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "MODULE":
+                continue
+            instance = element.attrib.get("INSTANCE", "")
+            if not instance:
+                continue
+            parameters = {}
+            for child in element.iter():
+                if child.tag.rsplit("}", 1)[-1] == "PARAMETER":
+                    name = child.attrib.get("NAME")
+                    if name:
+                        parameters[name.lower()] = child.attrib.get("VALUE", "")
+            modules[instance.lower()] = {
+                "vlnv": element.attrib.get("VLNV", ""),
+                "parameters": parameters,
+            }
+
+        missing_firs = [
+            name for name in PL_FIR_INSTANCE_NAMES if name.lower() not in modules
+        ]
+        if missing_firs:
+            raise RuntimeError(
+                "The HWH does not describe the latest fixed-FIR ADS-B path; "
+                f"missing instances {missing_firs}. Rebuild/deploy the matched "
+                ".bit and .hwh generated from the updated adsb_capture_bd.tcl."
+            )
+
+        fir_mismatches = []
+        for name in PL_FIR_INSTANCE_NAMES:
+            module = modules[name.lower()]
+            if "fir_compiler" not in module["vlnv"].lower():
+                fir_mismatches.append(f"{name} VLNV={module['vlnv']}")
+            parameters = module["parameters"]
+            checks = {
+                "decimation_rate": "32",
+                "filter_type": "Decimation",
+                "output_width": "16",
+            }
+            for parameter, wanted in checks.items():
+                actual = parameters.get(parameter)
+                if actual is not None and str(actual).lower() != wanted.lower():
+                    fir_mismatches.append(
+                        f"{name} {parameter}={actual} (expected {wanted})"
+                    )
+        if fir_mismatches:
+            raise RuntimeError(
+                "The HWH fixed-FIR configuration is incompatible: "
+                + ", ".join(fir_mismatches)
+            )
+
+    def _measure_output_sample_rate(
+        self,
+        samples: int = OUTPUT_RATE_PROBE_SAMPLES,
+        repeats: int = OUTPUT_RATE_PROBE_REPEATS,
+    ) -> float:
+        """Measure average output-word rate using complete timed DMA frames.
+
+        The capture gate counts accepted output words and asserts TLAST after
+        exactly ``samples`` transfers. Timing from arm to DMA completion
+        therefore measures the average stream rate even when TVALID is bursty.
+        The fastest repeat minimizes Linux scheduling/interrupt latency, which
+        can only make an individual measurement appear slower.
+        """
+        samples = int(samples)
+        repeats = int(repeats)
+        if samples <= 0 or repeats <= 0:
+            raise ValueError("rate-probe samples and repeats must be positive")
+
+        measured_rates_hz = []
+        for _ in range(repeats):
+            buffer = allocate(shape=(samples,), dtype=np.uint32)
+            try:
+                self.dma.recvchannel.transfer(buffer)
+                self.control.channel1.write(samples, 0xFFFFFFFF)
+                self._arm_toggle ^= 1
+                started = time.monotonic()
+                self.control.channel2.write(self._arm_toggle, 0x1)
+                self.dma.recvchannel.wait()
+                elapsed = time.monotonic() - started
+
+                status = int(self.status.channel1.read())
+                done = bool(status & 0x1)
+                overflow = bool(status & 0x2)
+                if overflow or not done:
+                    raise RuntimeError(
+                        "Output-rate probe produced invalid capture status "
+                        f"0x{status:08x}; inspect DMA/FIFO backpressure."
+                    )
+                measured_rates_hz.append(samples / max(elapsed, 1e-9))
+            finally:
+                buffer.freebuffer()
+
+        return max(measured_rates_hz)
 
     def _configure_receiver(self, centre_frequency_mhz: float) -> None:
         # Decimation and fabric width affect the physical PL interface and are
@@ -199,20 +333,15 @@ class AdsbCapture:
         }
         self.adc_block.UpdateEvent(xrfdc.EVENT_MIXER)
 
-        # In xsg_bwselector, selector 5 is total PL decimation by 32: the
-        # mandatory two-sample coarse stage followed by four divide-by-2 FIRs.
+        # PL decimation is fixed in the two FIR Compiler instances described by
+        # the HWH. There is intentionally no run-time selector/register write.
         # 2.56 GSPS / 8 / 32 = 10 MSPS complex output.
-        self.decimator.write(0x00, PL_DECIMATION_SELECT)
-        reported_selector = int(self.decimator.read(0x00))
-        if reported_selector != PL_DECIMATION_SELECT:
-            raise RuntimeError(
-                f"PL decimator selector read back as {reported_selector}; "
-                f"expected {PL_DECIMATION_SELECT}."
-            )
 
-        # The final stream is clocked at 160 MHz and selector 5 must assert
-        # TVALID once every 16 cycles: 160 MHz / 16 = 10 MSPS.  This measures
-        # the implemented datapath rather than trusting register readback.
+        # The status register exposes the most recent gap between TVALID
+        # transfers. It is useful for diagnosing the stream, but it is not an
+        # average-rate meter: a legal burst can contain adjacent transfers and
+        # therefore leave a final gap of one clock. Verify rate with complete
+        # timed DMA frames instead.
         deadline = time.monotonic() + 0.5
         valid_interval = 0
         while time.monotonic() < deadline:
@@ -221,15 +350,10 @@ class AdsbCapture:
             if valid_interval:
                 break
             time.sleep(0.005)
-        if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
-            measured_rate_hz = 160_000_000 / max(valid_interval, 1)
+        if valid_interval == 0:
             raise RuntimeError(
-                "Implemented PL sample rate is wrong: output TVALID interval "
-                f"is {valid_interval} fabric clocks "
-                f"(~{measured_rate_hz / 1e6:.3f} MSPS), expected "
-                f"{EXPECTED_OUTPUT_VALID_INTERVAL} clocks (10.000 MSPS). "
-                "An interval of 128 identifies the deepest /256 PL path and "
-                "explains the observed x8 FFT-frequency error."
+                "No output TVALID transfers were observed from the fixed FIR "
+                "path. Inspect FIR clocks, resets and AXI-stream connections."
             )
 
         sampling_ghz = float(self.adc_block.BlockStatus["SamplingFreq"])
@@ -239,9 +363,42 @@ class AdsbCapture:
                 "Check the Vivado RFDC PLL and the 409.6 MHz xrfclk setup."
             )
 
+        measured_rate_hz = self._measure_output_sample_rate()
+        if not np.isclose(
+            measured_rate_hz,
+            IQ_SAMPLE_RATE_HZ,
+            rtol=OUTPUT_RATE_PROBE_RTOL,
+            atol=0,
+        ):
+            raise RuntimeError(
+                "Implemented PL sample rate is wrong: timed DMA frames measured "
+                f"approximately {measured_rate_hz / 1e6:.3f} MSPS, expected "
+                f"{IQ_SAMPLE_RATE_HZ / 1e6:.3f} MSPS (tolerance "
+                f"{OUTPUT_RATE_PROBE_RTOL * 100:.0f}%). The most recent TVALID "
+                f"gap was {valid_interval} fabric clocks."
+            )
+        self._verified_output_sample_rate_hz = measured_rate_hz
+
+        if valid_interval != EXPECTED_OUTPUT_VALID_INTERVAL:
+            warnings.warn(
+                "The most recent output TVALID gap was "
+                f"{valid_interval} fabric clocks rather than the nominal "
+                f"average of {EXPECTED_OUTPUT_VALID_INTERVAL}, but timed DMA "
+                f"frames verified {measured_rate_hz / 1e6:.3f} MSPS. The fixed "
+                "FIR output is being accepted because individual TVALID gaps "
+                "can reflect burst scheduling rather than average sample rate.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
     @property
     def centre_frequency_mhz(self) -> float:
         return abs(float(self.adc_block.MixerSettings["Freq"]))
+
+    @property
+    def pl_decimator_kind(self) -> str:
+        """Return the implemented programmable-logic decimator variant."""
+        return PL_DECIMATOR_KIND
 
     @property
     def hardware_build_id(self) -> int:
@@ -250,8 +407,13 @@ class AdsbCapture:
 
     @property
     def output_valid_interval(self) -> int:
-        """Return fabric-clock cycles per final complex output sample."""
+        """Return the most recently observed gap between output transfers."""
         return (int(self.status.channel1.read()) >> 3) & 0x1FFF
+
+    @property
+    def verified_output_sample_rate_hz(self) -> float:
+        """Return the average output rate measured using timed DMA frames."""
+        return self._verified_output_sample_rate_hz
 
     @property
     def fabric_clock_hz(self) -> int:
@@ -323,8 +485,10 @@ class AdsbCapture:
             "rfdc_fabric_clock_hz": self.fabric_clock_hz,
             "pl_decimation": PL_DECIMATION,
             "pl_decimation_select": PL_DECIMATION_SELECT,
+            "pl_decimator_kind": PL_DECIMATOR_KIND,
             "hardware_build_id": f"0x{self.hardware_build_id:04X}",
             "output_valid_interval": self.output_valid_interval,
+            "verified_output_sample_rate_hz": self.verified_output_sample_rate_hz,
             "utc_unix_ns": time.time_ns(),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")

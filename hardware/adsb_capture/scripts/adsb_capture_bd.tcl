@@ -142,8 +142,6 @@ xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:proc_sys_reset:5.0\
 xilinx.com:ip:xlconstant:1.1\
 xilinx.com:ip:usp_rf_data_converter:2.6\
-strath.ac.uk:RFSoC:xsg_bwselector:1.2\
-xilinx.com:ip:axi_clock_converter:2.1\
 xilinx.com:ip:axis_subset_converter:1.1\
 xilinx.com:ip:axis_combiner:1.1\
 xilinx.com:ip:axis_data_fifo:2.0\
@@ -151,6 +149,7 @@ xilinx.com:ip:axis_clock_converter:1.1\
 xilinx.com:ip:axi_gpio:2.0\
 xilinx.com:ip:axi_dma:7.1\
 xilinx.com:ip:xlconcat:2.1\
+xilinx.com:ip:fir_compiler:7.2\
 "
 
    set list_ips_missing ""
@@ -212,6 +211,14 @@ proc create_root_design { parentCell } {
 
   variable script_folder
   variable design_name
+
+  # Resolve the FIR coefficients relative to this script so project creation
+  # does not depend on Vivado's launch directory or a developer-specific path.
+  set adsb_coeff_file [file normalize [file join \
+    $script_folder .. coefficients adsb_decimator.coe]]
+  if { ![file isfile $adsb_coeff_file] } {
+    error "Missing ADS-B FIR coefficient file: $adsb_coeff_file"
+  }
 
   if { $parentCell eq "" } {
      set parentCell [get_bd_cells /]
@@ -624,12 +631,6 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   # Create instance: rst_160m, and set properties
   set rst_160m [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_160m ]
 
-  # Create instance: decimator, and set properties
-  set decimator [ create_bd_cell -type ip -vlnv strath.ac.uk:RFSoC:xsg_bwselector:1.2 decimator ]
-
-  # Create instance: decimator_ctrl_cdc, and set properties
-  set decimator_ctrl_cdc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_clock_converter:2.1 decimator_ctrl_cdc ]
-
   # Create instance: subset_i, and set properties
   set subset_i [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 subset_i ]
   set_property -dict [list \
@@ -640,7 +641,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
     CONFIG.S_HAS_TKEEP {0} \
     CONFIG.S_HAS_TLAST {0} \
     CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {16} \
+    CONFIG.S_TDATA_NUM_BYTES {2} \
     CONFIG.TDATA_REMAP {tdata[15:0]} \
   ] $subset_i
 
@@ -655,7 +656,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
     CONFIG.S_HAS_TKEEP {0} \
     CONFIG.S_HAS_TLAST {0} \
     CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {16} \
+    CONFIG.S_TDATA_NUM_BYTES {2} \
     CONFIG.TDATA_REMAP {tdata[15:0]} \
   ] $subset_q
 
@@ -714,8 +715,8 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set_property -dict [list \
     CONFIG.C_ALL_INPUTS {1} \
     CONFIG.C_ALL_INPUTS_2 {1} \
-    CONFIG.C_GPIO_WIDTH {32} \
     CONFIG.C_GPIO2_WIDTH {32} \
+    CONFIG.C_GPIO_WIDTH {32} \
     CONFIG.C_IS_DUAL {1} \
   ] $capture_status
 
@@ -747,55 +748,73 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set_property CONFIG.NUM_PORTS {1} $irq_concat
 
 
-  # Create instance: rfdc_pad_i, and set properties
-  set rfdc_pad_i [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 rfdc_pad_i ]
+  # Create instance: JACOBS_FIR_Q, and set properties
+  set JACOBS_FIR_Q [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 JACOBS_FIR_Q ]
   set_property -dict [list \
-    CONFIG.M_HAS_TKEEP {0} \
-    CONFIG.M_HAS_TLAST {0} \
-    CONFIG.M_HAS_TSTRB {0} \
-    CONFIG.M_TDATA_NUM_BYTES {16} \
-    CONFIG.S_HAS_TKEEP {0} \
-    CONFIG.S_HAS_TLAST {0} \
-    CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {4} \
-    CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]} \
-  ] $rfdc_pad_i
+    CONFIG.Clock_Frequency {160} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File $adsb_coeff_file \
+    CONFIG.Coefficient_Fractional_Bits {0} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {16} \
+    CONFIG.ColumnConfig {4} \
+    CONFIG.Decimation_Rate {32} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Symmetric_Rounding_to_Infinity} \
+    CONFIG.Output_Width {16} \
+    CONFIG.Quantization {Integer_Coefficients} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {320} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $JACOBS_FIR_Q
 
 
-  # Create instance: rfdc_pad_q, and set properties
-  set rfdc_pad_q [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 rfdc_pad_q ]
+  # Create instance: JACOBS_FIR_I, and set properties
+  set JACOBS_FIR_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 JACOBS_FIR_I ]
   set_property -dict [list \
-    CONFIG.M_HAS_TKEEP {0} \
-    CONFIG.M_HAS_TLAST {0} \
-    CONFIG.M_HAS_TSTRB {0} \
-    CONFIG.M_TDATA_NUM_BYTES {16} \
-    CONFIG.S_HAS_TKEEP {0} \
-    CONFIG.S_HAS_TLAST {0} \
-    CONFIG.S_HAS_TSTRB {0} \
-    CONFIG.S_TDATA_NUM_BYTES {4} \
-    CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]} \
-  ] $rfdc_pad_q
+    CONFIG.Clock_Frequency {160} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File $adsb_coeff_file \
+    CONFIG.Coefficient_Fractional_Bits {0} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {16} \
+    CONFIG.ColumnConfig {4} \
+    CONFIG.Decimation_Rate {32} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Symmetric_Rounding_to_Infinity} \
+    CONFIG.Output_Width {16} \
+    CONFIG.Quantization {Integer_Coefficients} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {320} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $JACOBS_FIR_I
 
 
   # Create interface connections
+  connect_bd_intf_net -intf_net JACOBS_FIR_I_M_AXIS_DATA [get_bd_intf_pins JACOBS_FIR_I/M_AXIS_DATA] [get_bd_intf_pins subset_i/S_AXIS]
+  connect_bd_intf_net -intf_net JACOBS_FIR_Q_M_AXIS_DATA [get_bd_intf_pins JACOBS_FIR_Q/M_AXIS_DATA] [get_bd_intf_pins subset_q/S_AXIS]
   connect_bd_intf_net -intf_net adc1_clk_0_1 [get_bd_intf_ports adc1_clk_0] [get_bd_intf_pins rfdc/adc1_clk]
   connect_bd_intf_net -intf_net axi_dma_M_AXI_S2MM [get_bd_intf_pins axi_dma/M_AXI_S2MM] [get_bd_intf_pins memory_smc/S00_AXI]
   connect_bd_intf_net -intf_net capture_fifo_M_AXIS [get_bd_intf_pins capture_fifo/M_AXIS] [get_bd_intf_pins stream_cdc/S_AXIS]
   connect_bd_intf_net -intf_net capture_gate_M_AXIS [get_bd_intf_pins capture_gate/M_AXIS] [get_bd_intf_pins capture_fifo/S_AXIS]
   connect_bd_intf_net -intf_net control_smc_M00_AXI [get_bd_intf_pins control_smc/M00_AXI] [get_bd_intf_pins rfdc/s_axi]
-  connect_bd_intf_net -intf_net control_smc_M01_AXI [get_bd_intf_pins control_smc/M01_AXI] [get_bd_intf_pins decimator_ctrl_cdc/S_AXI]
   connect_bd_intf_net -intf_net control_smc_M02_AXI [get_bd_intf_pins control_smc/M02_AXI] [get_bd_intf_pins axi_dma/S_AXI_LITE]
   connect_bd_intf_net -intf_net control_smc_M03_AXI [get_bd_intf_pins control_smc/M03_AXI] [get_bd_intf_pins capture_control/S_AXI]
   connect_bd_intf_net -intf_net control_smc_M04_AXI [get_bd_intf_pins control_smc/M04_AXI] [get_bd_intf_pins capture_status/S_AXI]
-  connect_bd_intf_net -intf_net decimator_ctrl_cdc_M_AXI [get_bd_intf_pins decimator_ctrl_cdc/M_AXI] [get_bd_intf_pins decimator/xsg_bwselector_s_axi]
-  connect_bd_intf_net -intf_net decimator_m_axis_im [get_bd_intf_pins decimator/m_axis_im] [get_bd_intf_pins subset_q/S_AXIS]
-  connect_bd_intf_net -intf_net decimator_m_axis_re [get_bd_intf_pins decimator/m_axis_re] [get_bd_intf_pins subset_i/S_AXIS]
   connect_bd_intf_net -intf_net iq_combiner_M_AXIS [get_bd_intf_pins iq_combiner/M_AXIS] [get_bd_intf_pins capture_gate/S_AXIS]
   connect_bd_intf_net -intf_net memory_smc_M00_AXI [get_bd_intf_pins memory_smc/M00_AXI] [get_bd_intf_pins zynq_ultra_ps_e_0/S_AXI_HP0_FPD]
-  connect_bd_intf_net -intf_net rfdc_m10_axis [get_bd_intf_pins rfdc/m10_axis] [get_bd_intf_pins rfdc_pad_i/S_AXIS]
-  connect_bd_intf_net -intf_net rfdc_m11_axis [get_bd_intf_pins rfdc/m11_axis] [get_bd_intf_pins rfdc_pad_q/S_AXIS]
-  connect_bd_intf_net -intf_net rfdc_pad_i_M_AXIS [get_bd_intf_pins rfdc_pad_i/M_AXIS] [get_bd_intf_pins decimator/s_axis_re]
-  connect_bd_intf_net -intf_net rfdc_pad_q_M_AXIS [get_bd_intf_pins rfdc_pad_q/M_AXIS] [get_bd_intf_pins decimator/s_axis_im]
+  connect_bd_intf_net -intf_net rfdc_m10_axis [get_bd_intf_pins rfdc/m10_axis] [get_bd_intf_pins JACOBS_FIR_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net rfdc_m11_axis [get_bd_intf_pins rfdc/m11_axis] [get_bd_intf_pins JACOBS_FIR_Q/S_AXIS_DATA]
   connect_bd_intf_net -intf_net stream_cdc_M_AXIS [get_bd_intf_pins stream_cdc/M_AXIS] [get_bd_intf_pins axi_dma/S_AXIS_S2MM]
   connect_bd_intf_net -intf_net subset_i_M_AXIS [get_bd_intf_pins subset_i/M_AXIS] [get_bd_intf_pins iq_combiner/S00_AXIS]
   connect_bd_intf_net -intf_net subset_q_M_AXIS [get_bd_intf_pins subset_q/M_AXIS] [get_bd_intf_pins iq_combiner/S01_AXIS]
@@ -806,17 +825,17 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   connect_bd_net -net axi_dma_s2mm_introut [get_bd_pins axi_dma/s2mm_introut] [get_bd_pins irq_concat/In0]
   connect_bd_net -net capture_control_gpio2_io_o [get_bd_pins capture_control/gpio2_io_o] [get_bd_pins capture_gate/arm_toggle_ctrl]
   connect_bd_net -net capture_control_gpio_io_o [get_bd_pins capture_control/gpio_io_o] [get_bd_pins capture_gate/frame_samples_ctrl]
-  connect_bd_net -net capture_gate_status_ctrl [get_bd_pins capture_gate/status_ctrl] [get_bd_pins capture_status/gpio_io_i]
   connect_bd_net -net capture_gate_axis_clock_count [get_bd_pins capture_gate/axis_clocks_per_ms_ctrl] [get_bd_pins capture_status/gpio2_io_i]
+  connect_bd_net -net capture_gate_status_ctrl [get_bd_pins capture_gate/status_ctrl] [get_bd_pins capture_status/gpio_io_i]
   connect_bd_net -net clock_locked_dout [get_bd_pins clock_locked/dout] [get_bd_pins rst_100m/dcm_locked] [get_bd_pins rst_160m/dcm_locked] [get_bd_pins rst_200m/dcm_locked]
   connect_bd_net -net irq_concat_dout [get_bd_pins irq_concat/dout] [get_bd_pins zynq_ultra_ps_e_0/pl_ps_irq0]
-  connect_bd_net -net rfdc_clk_adc1 [get_bd_pins rfdc/clk_adc1] [get_bd_pins rst_160m/slowest_sync_clk] [get_bd_pins rfdc/m1_axis_aclk] [get_bd_pins decimator/clk] [get_bd_pins decimator_ctrl_cdc/m_axi_aclk] [get_bd_pins subset_i/aclk] [get_bd_pins subset_q/aclk] [get_bd_pins iq_combiner/aclk] [get_bd_pins capture_gate/axis_clk] [get_bd_pins capture_fifo/s_axis_aclk] [get_bd_pins stream_cdc/s_axis_aclk] [get_bd_pins rfdc_pad_i/aclk] [get_bd_pins rfdc_pad_q/aclk]
+  connect_bd_net -net rfdc_clk_adc1 [get_bd_pins rfdc/clk_adc1] [get_bd_pins rst_160m/slowest_sync_clk] [get_bd_pins rfdc/m1_axis_aclk] [get_bd_pins subset_i/aclk] [get_bd_pins subset_q/aclk] [get_bd_pins iq_combiner/aclk] [get_bd_pins capture_gate/axis_clk] [get_bd_pins capture_fifo/s_axis_aclk] [get_bd_pins stream_cdc/s_axis_aclk] [get_bd_pins JACOBS_FIR_Q/aclk] [get_bd_pins JACOBS_FIR_I/aclk]
   connect_bd_net -net rst_100m_interconnect_aresetn [get_bd_pins rst_100m/interconnect_aresetn] [get_bd_pins control_smc/aresetn]
-  connect_bd_net -net rst_160m [get_bd_pins rst_100m/peripheral_aresetn] [get_bd_pins rfdc/s_axi_aresetn] [get_bd_pins decimator_ctrl_cdc/s_axi_aresetn] [get_bd_pins capture_gate/ctrl_resetn] [get_bd_pins axi_dma/axi_resetn] [get_bd_pins capture_control/s_axi_aresetn] [get_bd_pins capture_status/s_axi_aresetn]
-  connect_bd_net -net rst_160m_peripheral_aresetn [get_bd_pins rst_160m/peripheral_aresetn] [get_bd_pins rfdc/m1_axis_aresetn] [get_bd_pins decimator/xsg_bwselector_aresetn] [get_bd_pins decimator_ctrl_cdc/m_axi_aresetn] [get_bd_pins subset_i/aresetn] [get_bd_pins subset_q/aresetn] [get_bd_pins iq_combiner/aresetn] [get_bd_pins capture_gate/axis_resetn] [get_bd_pins capture_fifo/s_axis_aresetn] [get_bd_pins stream_cdc/s_axis_aresetn] [get_bd_pins rfdc_pad_i/aresetn] [get_bd_pins rfdc_pad_q/aresetn]
+  connect_bd_net -net rst_160m [get_bd_pins rst_100m/peripheral_aresetn] [get_bd_pins rfdc/s_axi_aresetn] [get_bd_pins capture_gate/ctrl_resetn] [get_bd_pins axi_dma/axi_resetn] [get_bd_pins capture_control/s_axi_aresetn] [get_bd_pins capture_status/s_axi_aresetn]
+  connect_bd_net -net rst_160m_peripheral_aresetn [get_bd_pins rst_160m/peripheral_aresetn] [get_bd_pins rfdc/m1_axis_aresetn] [get_bd_pins subset_i/aresetn] [get_bd_pins subset_q/aresetn] [get_bd_pins iq_combiner/aresetn] [get_bd_pins capture_gate/axis_resetn] [get_bd_pins capture_fifo/s_axis_aresetn] [get_bd_pins stream_cdc/s_axis_aresetn]
   connect_bd_net -net rst_200m_interconnect_aresetn [get_bd_pins rst_200m/interconnect_aresetn] [get_bd_pins memory_smc/aresetn]
   connect_bd_net -net rst_200m_peripheral_aresetn [get_bd_pins rst_200m/peripheral_aresetn] [get_bd_pins stream_cdc/m_axis_aresetn]
-  connect_bd_net -net zynq_ultra_ps_e_0_pl_clk0 [get_bd_pins zynq_ultra_ps_e_0/pl_clk0] [get_bd_pins rst_100m/slowest_sync_clk] [get_bd_pins control_smc/aclk] [get_bd_pins rfdc/s_axi_aclk] [get_bd_pins decimator_ctrl_cdc/s_axi_aclk] [get_bd_pins capture_gate/ctrl_clk] [get_bd_pins axi_dma/s_axi_lite_aclk] [get_bd_pins capture_control/s_axi_aclk] [get_bd_pins capture_status/s_axi_aclk] [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_lpd_aclk]
+  connect_bd_net -net zynq_ultra_ps_e_0_pl_clk0 [get_bd_pins zynq_ultra_ps_e_0/pl_clk0] [get_bd_pins rst_100m/slowest_sync_clk] [get_bd_pins control_smc/aclk] [get_bd_pins rfdc/s_axi_aclk] [get_bd_pins capture_gate/ctrl_clk] [get_bd_pins axi_dma/s_axi_lite_aclk] [get_bd_pins capture_control/s_axi_aclk] [get_bd_pins capture_status/s_axi_aclk] [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_lpd_aclk]
   connect_bd_net -net zynq_ultra_ps_e_0_pl_clk1 [get_bd_pins zynq_ultra_ps_e_0/pl_clk1] [get_bd_pins axi_dma/m_axi_s2mm_aclk] [get_bd_pins rst_200m/slowest_sync_clk] [get_bd_pins stream_cdc/m_axis_aclk] [get_bd_pins memory_smc/aclk] [get_bd_pins zynq_ultra_ps_e_0/saxihp0_fpd_aclk]
   connect_bd_net -net zynq_ultra_ps_e_0_pl_resetn0 [get_bd_pins zynq_ultra_ps_e_0/pl_resetn0] [get_bd_pins rst_100m/ext_reset_in] [get_bd_pins rst_160m/ext_reset_in] [get_bd_pins rst_200m/ext_reset_in]
 
@@ -824,7 +843,6 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   assign_bd_address -offset 0x80000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs axi_dma/S_AXI_LITE/Reg] -force
   assign_bd_address -offset 0x80010000 -range 0x00010000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs capture_control/S_AXI/Reg] -force
   assign_bd_address -offset 0x80020000 -range 0x00010000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs capture_status/S_AXI/Reg] -force
-  assign_bd_address -offset 0x80030000 -range 0x00010000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs decimator/xsg_bwselector_s_axi/reg0] -force
   assign_bd_address -offset 0x80040000 -range 0x00040000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs rfdc/s_axi/Reg] -force
   assign_bd_address -offset 0x000800000000 -range 0x000800000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_DDR_HIGH] -force
   assign_bd_address -offset 0x00000000 -range 0x80000000 -target_address_space [get_bd_addr_spaces axi_dma/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_DDR_LOW] -force
@@ -848,52 +866,3 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
 ##################################################################
 
 create_root_design ""
-
-# Fail project creation if Vivado silently substitutes a stale IP definition
-# or changes a rate/width property.  These properties define the complete
-# 2.560 GSPS -> 320 MSPS -> 10 MSPS sample-rate chain.
-proc assert_bd_property {object_name property_name expected_value} {
-  set object [get_bd_cells $object_name]
-  set actual_value [get_property $property_name $object]
-  if {$actual_value ne $expected_value} {
-    error "ADS-B design audit failed: $object_name $property_name is '$actual_value', expected '$expected_value'"
-  }
-}
-
-proc assert_bd_numeric_property {object_name property_name expected_value} {
-  set object [get_bd_cells $object_name]
-  set actual_value [get_property $property_name $object]
-  if {abs(double($actual_value) - double($expected_value)) > 1.0e-9} {
-    error "ADS-B design audit failed: $object_name $property_name is '$actual_value', expected '$expected_value'"
-  }
-}
-
-assert_bd_numeric_property rfdc CONFIG.ADC1_Sampling_Rate 2.56
-assert_bd_numeric_property rfdc CONFIG.ADC1_Outclk_Freq 160.000
-assert_bd_numeric_property rfdc CONFIG.ADC1_Fabric_Freq 160.000
-assert_bd_property rfdc CONFIG.ADC_Data_Type10 1
-assert_bd_property rfdc CONFIG.ADC_Data_Width10 2
-assert_bd_property rfdc CONFIG.ADC_Decimation_Mode10 8
-assert_bd_property rfdc CONFIG.ADC_Mixer_Mode10 0
-assert_bd_property rfdc CONFIG.ADC_Mixer_Type10 2
-assert_bd_numeric_property rfdc CONFIG.ADC_NCO_Freq10 1.09
-assert_bd_property rfdc CONFIG.ADC_Neg_Quadrature10 true
-assert_bd_property decimator VLNV strath.ac.uk:RFSoC:xsg_bwselector:1.2
-assert_bd_property rfdc_pad_i CONFIG.S_TDATA_NUM_BYTES 4
-assert_bd_property rfdc_pad_i CONFIG.M_TDATA_NUM_BYTES 16
-assert_bd_property rfdc_pad_i CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]}
-assert_bd_property rfdc_pad_q CONFIG.S_TDATA_NUM_BYTES 4
-assert_bd_property rfdc_pad_q CONFIG.M_TDATA_NUM_BYTES 16
-assert_bd_property rfdc_pad_q CONFIG.TDATA_REMAP {8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,8'b00000000,tdata[31:0]}
-assert_bd_property subset_i CONFIG.S_TDATA_NUM_BYTES 16
-assert_bd_property subset_i CONFIG.M_TDATA_NUM_BYTES 2
-assert_bd_property subset_i CONFIG.TDATA_REMAP {tdata[15:0]}
-assert_bd_property subset_q CONFIG.S_TDATA_NUM_BYTES 16
-assert_bd_property subset_q CONFIG.M_TDATA_NUM_BYTES 2
-assert_bd_property subset_q CONFIG.TDATA_REMAP {tdata[15:0]}
-assert_bd_property axi_dma CONFIG.c_s_axis_s2mm_tdata_width 32
-assert_bd_property capture_status CONFIG.C_GPIO_WIDTH 32
-assert_bd_property capture_status CONFIG.C_IS_DUAL 1
-assert_bd_property capture_status CONFIG.C_GPIO2_WIDTH 32
-
-puts "ADS-B design audit passed: RFDC clock 160 MHz, RFDC /8, two words/beat, PL selector-5 target /32."

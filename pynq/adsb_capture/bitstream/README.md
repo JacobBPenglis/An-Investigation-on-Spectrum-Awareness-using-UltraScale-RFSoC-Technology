@@ -10,14 +10,14 @@ adsb_capture.hwh
 These files come from
 
 ```text
-build_rfdc8_pl32_clk160/adsb_capture.runs/impl_1/adsb_capture_wrapper.bit
+build_rfdc8_fir32_clk160_v2/adsb_capture.runs/impl_1/adsb_capture_wrapper.bit
   : rename to adsb_capture.bit
-build_rfdc8_pl32_clk160/adsb_capture.gen/sources_1/bd/adsb_capture/hw_handoff/adsb_capture.hwh
+build_rfdc8_fir32_clk160_v2/adsb_capture.gen/sources_1/bd/adsb_capture/hw_handoff/adsb_capture.hwh
 ```
 
 Both files originate from the same Vivado implementation run and retain the
 same base name. PYNQ reads the `.hwh` metadata to locate the RFDC, DMA, GPIO,
-and decimator instances.
+and fixed `JACOBS_FIR_I/Q` decimator instances.
 
 The normal board deployment does not require the Vivado project or an `.xsa`
 file.
