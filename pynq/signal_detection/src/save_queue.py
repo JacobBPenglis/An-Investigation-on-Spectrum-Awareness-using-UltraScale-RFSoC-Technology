@@ -10,6 +10,7 @@ class SaveQueue:
     def __init__(self):
         self.queue: Queue[dict[str, datetime | npt.NDArray]] = Queue()
         self.record_dir = Path(__file__).parent.parent / "data"
+        self.active = True
 
     def enqueue(self, sample: dict[str, datetime | npt.NDArray]) -> None:
         # Add new sample to the save queue
@@ -17,12 +18,15 @@ class SaveQueue:
 
     def dequeue_and_save(self) -> None:
         # Save first element in queue
-        sample = self.queue.get()
+        try:
+            sample = self.queue.get(timeout=1)
+        except:
+            return
 
         if len(sample["iq"]) == config.sig_len:
             # Decode signal
             mag = np.abs(sample["iq"])
-            payload = mag.reshape(-1, config.fs_mult).mean(axis=1)[16:]
+            payload = mag.reshape(-1, config.fs_mult).mean(axis=1)[len(config.preamble_mask):]
             payload_bits = payload[0::2] > payload[1::2]
             msg = np.packbits(payload_bits).tobytes().hex().upper()
 
@@ -34,4 +38,10 @@ class SaveQueue:
             with open(self.record_dir / "record.npy", "ab") as f:
                 np.save(f, sample["timestamp"])
                 np.save(f, sample["iq"])
-            print(f"DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, Type Code: {pms.adsb.typecode(msg)}")
+            print(f"{sample['timestamp'].time()} | DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, Type Code: {pms.adsb.typecode(msg)}, CRC Valid: {pms.crc(msg) == 0}")
+    
+    def close(self) -> None:
+        self.active = False
+
+    def is_active(self) -> bool:
+        return self.active

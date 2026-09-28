@@ -36,7 +36,7 @@ class WindowedCircularBuffer:
                     self.condition.wait()
                 down_time = time.perf_counter() - start_draining
                 self.down_time += down_time
-                print(f"Buffer inactive for {down_time/1e3:.2f}ms")
+                print(f"Buffer inactive for {down_time*1e6:.2f}us")
                 return
 
             # No wrap around
@@ -64,10 +64,16 @@ class WindowedCircularBuffer:
     def update_mirror(self) -> None:
         self.buffer[self.size:] = self.buffer[:self.window_size]
 
-    def peek_window(self) -> npt.NDArray:
+    def peek_window(self) -> npt.NDArray | None:
         with self.condition:
-            while self.count < self.window_size and self.active:
+            # Wait for buffer to have data
+            while self.count < self.window_size:
                 self.condition.wait()
+
+                # If the buffer is no longer active, don't return anything
+                if not self.active:
+                    return None
+                
             return self.buffer[int(self.tail):int(self.tail + self.window_size)]
     
     def pop_window(self, step: int) -> None:
@@ -102,4 +108,4 @@ class WindowedCircularBuffer:
 
     def display_timing_stats(self) -> None:
         total_time = time.perf_counter() - self.start_time
-        print(f"Buffer active for {(1 - self.down_time/total_time)*100:.2f}% of the {total_time/60:.2f} minutes it was open")
+        print(f"\nBuffer active for {(1 - self.down_time/total_time)*100:.2f}% of the {total_time/60:.2f} minutes it was open")

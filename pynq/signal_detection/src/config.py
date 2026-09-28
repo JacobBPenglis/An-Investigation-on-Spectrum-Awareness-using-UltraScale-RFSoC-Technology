@@ -1,5 +1,14 @@
+from enum import Enum
 import numpy as np
 import numpy.typing as npt
+
+class producer(Enum):
+    FILE = 0
+    ZCU111 = 1
+    PLUTO_SDR = 2
+    BLADE_RF = 3
+
+mode: producer = producer.FILE
 
 fs: float = 2e6
 fs_mult: int = 5
@@ -22,5 +31,5 @@ WINDOW_SIZE: int = 2048
 OVERLAP: int = int(WINDOW_SIZE/4)
 STEP: int = WINDOW_SIZE - OVERLAP
 
-MAG_THRESH: int = 45
+POWER_THRESH_DB: int = 4
 CORRELATION_STD_THRESH: int = 3.5
