@@ -35,7 +35,10 @@ class SaveQueue:
                 return
 
             # Save signal to file
-            with open(self.record_dir / "record.npy", "ab") as f:
+            filename = "record.npy"
+            if config.mode == config.producer.FILE:
+                filename = "test_record.npy"
+            with open(self.record_dir / filename, "ab") as f:
                 np.save(f, sample["timestamp"])
                 np.save(f, sample["iq"])
             print(f"{sample['timestamp'].time()} | DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, Type Code: {pms.adsb.typecode(msg)}, CRC Valid: {pms.crc(msg) == 0}")
