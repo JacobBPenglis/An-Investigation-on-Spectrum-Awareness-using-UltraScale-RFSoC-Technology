@@ -11,3 +11,5 @@ dataset_root/
 artifacts/
 *_outputs/
 
+# Data uploaded to the signal detection system
+pynq/signal_detection/data/adsb_sample.bit
