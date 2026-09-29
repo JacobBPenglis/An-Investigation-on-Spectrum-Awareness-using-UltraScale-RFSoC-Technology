@@ -152,7 +152,6 @@ def blade_producer(buffer: WindowedCircularBuffer) -> None:
 
             # Transform raw samples into IQ data and write them to the buffer
             iq = raw_samples[0::2] + 1j * raw_samples[1::2]
-            iq /= 2048.0
             buffer.push_samples(iq)
 
     except Exception as e:
