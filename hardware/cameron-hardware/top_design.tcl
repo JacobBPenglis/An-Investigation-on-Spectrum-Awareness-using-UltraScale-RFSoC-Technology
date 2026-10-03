@@ -220,7 +220,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage1.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage1.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -246,7 +246,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage1.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage1.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -272,7 +272,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage2.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage2.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -298,7 +298,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage2.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage2.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -343,7 +343,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage3.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage3.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -369,7 +369,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage3.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage3.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -395,7 +395,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage4.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage4.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -421,7 +421,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage4.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage4.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -447,7 +447,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage5.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage5.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -473,7 +473,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage5.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage5.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -499,7 +499,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage6.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage6.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -525,7 +525,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage6.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage6.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -551,7 +551,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage7.coe} \
+   CONFIG.Coefficient_File [file join $script_folder coeffs stage7.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -577,7 +577,7 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   set_property -dict [list \
     CONFIG.Clock_Frequency {320} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {/home/cameron/CAMERON-An-Investigation-on-Spectrum-Awareness-using-UltraScale-RFSoC-Technology/hardware/cameron-hardware/coeffs/stage7.coe} \
+    CONFIG.Coefficient_File [file join $script_folder coeffs stage7.coe] \
     CONFIG.Coefficient_Fractional_Bits {15} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
