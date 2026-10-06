@@ -1,0 +1,35 @@
+{
+  "capture_files": [
+    "011026_ML.npy",
+    "230926_ML_2.npy",
+    "230926_ML_3.npy",
+    "240926_ML.npy",
+    "280926_ML.npy",
+    "290926_ML.npy"
+  ],
+  "total_records": 80730,
+  "crc_valid_records": 80730,
+  "embedded_calendar_days": [
+    "2026-08-26",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-02"
+  ],
+  "total_icao_classes": 235,
+  "retained_classes": 213,
+  "retained_records": 80669,
+  "smallest_retained_class": "7C4A45",
+  "smallest_retained_count": 7,
+  "largest_retained_class": "7C0074",
+  "largest_retained_count": 3856,
+  "aircraft_on_multiple_days": 109,
+  "folds": 5,
+  "best_model": "Compact 1D CNN"
+}
