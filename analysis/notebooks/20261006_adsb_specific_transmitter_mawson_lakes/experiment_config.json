@@ -1,0 +1,28 @@
+{
+  "data_dir": "data",
+  "file_pattern": "*.npy",
+  "min_records_per_class": 6,
+  "sample_rate_hz": 10000000.0,
+  "samples_per_half_symbol": 5,
+  "preamble_half_symbols": 16,
+  "record_len": 1200,
+  "preamble_len": 80,
+  "payload_start": 80,
+  "folds": 5,
+  "seed": 42,
+  "batch_size": 64,
+  "epochs": 15,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0002,
+  "dropout": 0.3,
+  "cnn_channels": [
+    16,
+    32,
+    48
+  ],
+  "tcn_channels": 24,
+  "gru_hidden": 32,
+  "random_forest_trees": 200,
+  "output_dir": "20261006_adsb_specific_transmitter_mawson_lakes",
+  "figure_dir": "20261006_adsb_specific_transmitter_mawson_lakes/figures"
+}
