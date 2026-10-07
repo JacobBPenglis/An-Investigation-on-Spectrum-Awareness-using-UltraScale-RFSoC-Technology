@@ -1,0 +1,6 @@
+experiment,type_day_group,classes,records,accuracy,balanced_accuracy,macro_f1
+physical_feature_svm,multiple days,4,20000,0.5791,0.5791,0.5887121919977738
+physical_feature_random_forest,multiple days,4,20000,0.56665,0.56665,0.5769525383853418
+preamble_cnn,multiple days,4,20000,0.5802,0.5802,0.5897083413025398
+preamble_tcn,multiple days,4,20000,0.576,0.576,0.5689579818849397
+preamble_gru_rnn,multiple days,4,20000,0.6282,0.6282,0.6463660041030168

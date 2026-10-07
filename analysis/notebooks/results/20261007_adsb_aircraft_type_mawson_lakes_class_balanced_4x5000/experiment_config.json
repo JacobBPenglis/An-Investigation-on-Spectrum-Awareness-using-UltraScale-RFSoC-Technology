@@ -1,0 +1,30 @@
+{
+  "data_dir": "data",
+  "file_pattern": "*.npy",
+  "aircraft_db_path": "basic-ac-db.json",
+  "num_classes": 4,
+  "samples_per_class": 5000,
+  "sample_rate_hz": 10000000.0,
+  "samples_per_half_symbol": 5,
+  "preamble_half_symbols": 16,
+  "record_len": 1200,
+  "preamble_len": 80,
+  "payload_start": 80,
+  "folds": 5,
+  "seed": 42,
+  "batch_size": 64,
+  "epochs": 15,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0002,
+  "dropout": 0.3,
+  "cnn_channels": [
+    16,
+    32,
+    48
+  ],
+  "tcn_channels": 24,
+  "gru_hidden": 32,
+  "random_forest_trees": 200,
+  "output_dir": "results/20261007_adsb_aircraft_type_mawson_lakes_class_balanced_4x5000",
+  "figure_dir": "results/20261007_adsb_aircraft_type_mawson_lakes_class_balanced_4x5000/figures"
+}
