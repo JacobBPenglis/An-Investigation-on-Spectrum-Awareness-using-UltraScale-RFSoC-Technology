@@ -22,21 +22,26 @@ def file_producer(buffer: WindowedCircularBuffer) -> None:
     sample_data = Path(__file__).parent.parent / "data/adsb_sample.bit"
 
     # Start producing
+    block_duration = config.READ_BLOCK_SIZE/(config.fs * config.fs_mult)
+    next_block = time.perf_counter() + block_duration
     try:
         with open(sample_data, "rb") as f:
             while buffer.is_active():
                 # Get raw samples of format (I, Q, I, Q, ...)
-                raw_samples = np.fromfile(f, dtype=np.int16, count=config.WINDOW_SIZE * 2)
+                raw_samples = np.fromfile(f, dtype=np.int16, count=config.READ_BLOCK_SIZE * 2)
 
-                # Transform raw samples into IQ data and write them to the buffer
+                # Transform raw samples into IQ data
                 iq = raw_samples[0::2] + 1j * raw_samples[1::2]
+
+                # Add delay to try and simulate a live producer
+                time.sleep(max(0, next_block - time.perf_counter()))
+                next_block += block_duration
+
+                # Write block to buffer
                 buffer.push_samples(iq)
 
-                # Add delay to simulate a live producer
-                time.sleep(config.WINDOW_SIZE/config.fs)
-
                 # Exit if at end of file
-                if len(raw_samples) < config.WINDOW_SIZE*2:
+                if len(raw_samples) < config.READ_BLOCK_SIZE*2:
                     break
 
     except Exception as e:
