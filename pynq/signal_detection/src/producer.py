@@ -115,6 +115,7 @@ def pluto_producer(buffer: WindowedCircularBuffer) -> None:
 
 def blade_producer(buffer: WindowedCircularBuffer) -> None:
     from bladerf import _bladerf
+    from scipy.signal import firwin2, fftconvolve
 
     # Initialise the SDR
     sdr = _bladerf.BladeRF()
@@ -140,6 +141,14 @@ def blade_producer(buffer: WindowedCircularBuffer) -> None:
     bytes_per_sample = 4 # I and Q int16s
     buf = bytearray(config.READ_BLOCK_SIZE * bytes_per_sample)
 
+    # Create filter to reduce the magnitude of signals farther from the centre freq
+    filt = firwin2(
+        101,
+        [0, 1e6, 2e6, 3e6, 4e6, 5e6],
+        [1, 1, 0.9, 0.7, 0.2, 0.1],
+        fs=config.fs * config.fs_mult
+    )
+
     rx_ch.enable = True
 
     # Start producing
@@ -152,7 +161,7 @@ def blade_producer(buffer: WindowedCircularBuffer) -> None:
 
             # Transform raw samples into IQ data and write them to the buffer
             iq = raw_samples[0::2] + 1j * raw_samples[1::2]
-            buffer.push_samples(iq)
+            buffer.push_samples(fftconvolve(filt, iq))
 
     except Exception as e:
         print("\nProducer exited with the following error:\n", e)

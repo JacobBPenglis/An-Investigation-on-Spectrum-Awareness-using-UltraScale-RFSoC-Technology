@@ -8,7 +8,7 @@ class producer(Enum):
     PLUTO_SDR = 2
     BLADE_RF = 3
 
-mode: producer = producer.PLUTO_SDR
+mode: producer = producer.BLADE_RF
 
 fs: float = 2e6
 fs_mult: int = 5
