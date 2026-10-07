@@ -1,0 +1,6 @@
+fold,training_records,validation_records,training_classes,validation_classes,record_overlap,payload_hash_overlap
+1,19200,4800,6,6,0,226
+2,19200,4800,6,6,0,230
+3,19200,4800,6,6,0,224
+4,19200,4800,6,6,0,227
+5,19200,4800,6,6,0,208

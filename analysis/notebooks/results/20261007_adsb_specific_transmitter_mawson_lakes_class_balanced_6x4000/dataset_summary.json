@@ -1,0 +1,50 @@
+{
+  "capture_files": [
+    "011026_ML.npy",
+    "021026_ML.npy",
+    "230926_ML_2.npy",
+    "230926_ML_3.npy",
+    "240926_ML.npy",
+    "280926_ML.npy",
+    "290926_ML.npy"
+  ],
+  "total_records": 111707,
+  "crc_valid_records": 111707,
+  "embedded_calendar_days": [
+    "2026-08-26",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04",
+    "2026-10-05",
+    "2026-10-06"
+  ],
+  "total_icao_classes": 282,
+  "num_classes": 6,
+  "samples_per_class": 4000,
+  "selected_icaos": [
+    "7C0074",
+    "7C0077",
+    "7C2E75",
+    "7C41FD",
+    "7C444D",
+    "7C67D0"
+  ],
+  "retained_classes": 6,
+  "retained_records": 24000,
+  "smallest_retained_class": "7C0074",
+  "smallest_retained_count": 4000,
+  "largest_retained_class": "7C0074",
+  "largest_retained_count": 4000,
+  "aircraft_on_multiple_days": 6,
+  "folds": 5,
+  "best_model": "Physical-feature RBF SVM"
+}
