@@ -8,7 +8,7 @@ class producer(Enum):
     PLUTO_SDR = 2
     BLADE_RF = 3
 
-mode: producer = producer.FILE
+mode: producer = producer.BLADE_RF
 
 fs: float = 2e6
 fs_mult: int = 5
@@ -31,5 +31,5 @@ WINDOW_SIZE: int = 2048
 OVERLAP: int = int(WINDOW_SIZE/4)
 STEP: int = WINDOW_SIZE - OVERLAP
 
-POWER_THRESH_DB: int = 4
+POWER_THRESH_DB: int = 2
 CORRELATION_STD_THRESH: int = 3.5

@@ -8,11 +8,12 @@ import pyModeS as pms
 
 class SaveQueue:
     def __init__(self):
-        self.queue: Queue[dict[str, datetime | npt.NDArray]] = Queue()
+        self.queue: Queue[dict[str, datetime | float | npt.NDArray]] = Queue()
         self.record_dir = Path(__file__).parent.parent / "data"
         self.active = True
+        self.count = 0
 
-    def enqueue(self, sample: dict[str, datetime | npt.NDArray]) -> None:
+    def enqueue(self, sample: dict[str, datetime | float | npt.NDArray]) -> None:
         # Add new sample to the save queue
         self.queue.put(sample)
 
@@ -26,6 +27,7 @@ class SaveQueue:
         if len(sample["iq"]) == config.sig_len:
             # Decode signal
             mag = np.abs(sample["iq"])
+            snr: float = 0
             payload = mag.reshape(-1, config.fs_mult).mean(axis=1)[len(config.preamble_mask):]
             payload_bits = payload[0::2] > payload[1::2]
             msg = np.packbits(payload_bits).tobytes().hex().upper()
@@ -35,13 +37,20 @@ class SaveQueue:
                 return
 
             # Save signal to file
-            filename = "record.npy"
+            filename = "6_bladeRF_record.npy"
             if config.mode == config.producer.FILE:
                 filename = "test_record.npy"
             with open(self.record_dir / filename, "ab") as f:
                 np.save(f, sample["timestamp"])
+                np.save(f, sample["noise_floor"])
                 np.save(f, sample["iq"])
-            print(f"{sample['timestamp'].time()} | DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, Type Code: {pms.adsb.typecode(msg)}, CRC Valid: {pms.crc(msg) == 0}")
+
+            if sample["noise_floor"] > 0:
+                total_power = np.mean(mag**2)
+                noise_power = sample["noise_floor"]**2
+                snr_db = 10 * np.log10((total_power - noise_power)/noise_power)
+            print(f"{self.count} | SNR: {snr_db:.2f}dB, {sample['timestamp'].time()} | DF: {pms.adsb.df(msg)}, ICAO: {pms.adsb.icao(msg)}, CRC Valid: {pms.crc(msg) == 0}")
+            self.count += 1
     
     def close(self) -> None:
         self.active = False
