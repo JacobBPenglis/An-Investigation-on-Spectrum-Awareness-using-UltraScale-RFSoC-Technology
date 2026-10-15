@@ -43,13 +43,6 @@ if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
 # To test this script, run the following commands from Vivado Tcl console:
 # source top_design_script.tcl
 
-
-# The design that will be created by this Tcl script contains the following 
-# module references:
-# iq_to_power, square_signed, truncate, square_signed, axis_sum80, truncate, adsb_fixed_detector, adsb_iq_frame_gate
-
-# Please add the sources of those modules before sourcing this Tcl script.
-
 # If there is no project opened, this script will create a
 # project, but make sure you do not have an existing project
 # <./myproj/project_1.xpr> in the current working folder.
@@ -140,13 +133,13 @@ if { $bCheckIPs == 1 } {
 xilinx.com:ip:zynq_ultra_ps_e:3.5\
 xilinx.com:ip:axi_dma:7.1\
 xilinx.com:ip:proc_sys_reset:5.0\
-xilinx.com:ip:usp_rf_data_converter:2.6\
 xilinx.com:ip:axis_data_fifo:2.0\
-xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:axis_subset_converter:1.1\
-xilinx.com:ip:fir_compiler:7.2\
+xilinx.com:ip:usp_rf_data_converter:2.6\
 xilinx.com:ip:axis_combiner:1.1\
-xilinx.com:ip:axis_broadcaster:1.1\
+xilinx.com:ip:clk_wiz:6.0\
+xilinx.com:ip:smartconnect:1.0\
+xilinx.com:ip:fir_compiler:7.2\
 "
 
    set list_ips_missing ""
@@ -166,38 +159,6 @@ xilinx.com:ip:axis_broadcaster:1.1\
 
 }
 
-##################################################################
-# CHECK Modules
-##################################################################
-set bCheckModules 1
-if { $bCheckModules == 1 } {
-   set list_check_mods "\ 
-iq_to_power\
-square_signed\
-truncate\
-square_signed\
-axis_sum80\
-truncate\
-adsb_fixed_detector\
-adsb_iq_frame_gate\
-"
-
-   set list_mods_missing ""
-   common::send_gid_msg -ssname BD::TCL -id 2020 -severity "INFO" "Checking if the following modules exist in the project's sources: $list_check_mods ."
-
-   foreach mod_vlnv $list_check_mods {
-      if { [can_resolve_reference $mod_vlnv] == 0 } {
-         lappend list_mods_missing $mod_vlnv
-      }
-   }
-
-   if { $list_mods_missing ne "" } {
-      catch {common::send_gid_msg -ssname BD::TCL -id 2021 -severity "ERROR" "The following module(s) are not found in the project: $list_mods_missing" }
-      common::send_gid_msg -ssname BD::TCL -id 2022 -severity "INFO" "Please add source files for the missing module(s) above."
-      set bCheckIPsPassed 0
-   }
-}
-
 if { $bCheckIPsPassed != 1 } {
   common::send_gid_msg -ssname BD::TCL -id 2023 -severity "WARNING" "Will not continue with creation of design due to the error(s) above."
   return 3
@@ -208,13 +169,13 @@ if { $bCheckIPsPassed != 1 } {
 ##################################################################
 
 
-# Hierarchical cell: detector_pipeline
-proc create_hier_cell_detector_pipeline { parentCell nameHier } {
+# Hierarchical cell: decimation_pipeline1
+proc create_hier_cell_decimation_pipeline1 { parentCell nameHier } {
 
   variable script_folder
 
   if { $parentCell eq "" || $nameHier eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2092 -severity "ERROR" "create_hier_cell_detector_pipeline() - Empty argument(s)!"}
+     catch {common::send_gid_msg -ssname BD::TCL -id 2092 -severity "ERROR" "create_hier_cell_decimation_pipeline1() - Empty argument(s)!"}
      return
   }
 
@@ -243,7 +204,9 @@ proc create_hier_cell_detector_pipeline { parentCell nameHier } {
   current_bd_instance $hier_obj
 
   # Create interface pins
-  create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS
+  create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_DATA_I
+
+  create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_DATA_Q
 
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 M_AXIS
 
@@ -252,214 +215,497 @@ proc create_hier_cell_detector_pipeline { parentCell nameHier } {
   create_bd_pin -dir I -type clk aclk
   create_bd_pin -dir I -type rst aresetn
 
-  # Create instance: axis_broadcaster_0, and set properties
-  set axis_broadcaster_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_broadcaster:1.1 axis_broadcaster_0 ]
+  # Create instance: axis_subset_converter_0, and set properties
+  set axis_subset_converter_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 axis_subset_converter_0 ]
   set_property -dict [list \
-    CONFIG.HAS_TKEEP {0} \
-    CONFIG.HAS_TLAST {0} \
-    CONFIG.HAS_TSTRB {0} \
-  ] $axis_broadcaster_0
+    CONFIG.M_TDATA_NUM_BYTES {2} \
+    CONFIG.S_TDATA_NUM_BYTES {3} \
+    CONFIG.TDATA_REMAP {tdata[15:0]} \
+  ] $axis_subset_converter_0
 
 
-  # Create instance: iq_to_power_0, and set properties
-  set block_name iq_to_power
-  set block_cell_name iq_to_power_0
-  if { [catch {set iq_to_power_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $iq_to_power_0 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-  
-  # Create instance: axis_broadcaster_1, and set properties
-  set axis_broadcaster_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_broadcaster:1.1 axis_broadcaster_1 ]
+  # Create instance: stage1_I, and set properties
+  set stage1_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage1_I ]
   set_property -dict [list \
-    CONFIG.HAS_TKEEP {0} \
-    CONFIG.HAS_TLAST {0} \
-    CONFIG.HAS_TSTRB {0} \
-  ] $axis_broadcaster_1
-
-
-  # Create instance: axis_data_fifo_0, and set properties
-  set axis_data_fifo_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 axis_data_fifo_0 ]
-  set_property CONFIG.FIFO_DEPTH {1024} $axis_data_fifo_0
-
-
-  # Create instance: preamble_corr, and set properties
-  set preamble_corr [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 preamble_corr ]
-  set_property -dict [list \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/preamble.coe} \
-    CONFIG.Coefficient_Fractional_Bits {0} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage1.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
-    CONFIG.Coefficient_Width {3} \
-    CONFIG.ColumnConfig {5} \
-    CONFIG.Data_Width {32} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {16} \
+    CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
-    CONFIG.Output_Rounding_Mode {Full_Precision} \
-    CONFIG.Output_Width {39} \
-    CONFIG.Quantization {Integer_Coefficients} \
-    CONFIG.Sample_Frequency {10} \
-  ] $preamble_corr
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {17} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {128} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage1_I
 
 
-  # Create instance: square_signed_0, and set properties
-  set block_name square_signed
-  set block_cell_name square_signed_0
-  if { [catch {set square_signed_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $square_signed_0 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-    set_property CONFIG.DATA_WIDTH {40} $square_signed_0
+  # Create instance: stage2_I, and set properties
+  set stage2_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage2_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage2.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {17} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {18} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {64} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage2_I
 
 
-  # Create instance: truncate_80_to_64, and set properties
-  set block_name truncate
-  set block_cell_name truncate_80_to_64
-  if { [catch {set truncate_80_to_64 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $truncate_80_to_64 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-    set_property -dict [list \
-    CONFIG.INPUT_WIDTH {80} \
-    CONFIG.OUTPUT_WIDTH {64} \
-  ] $truncate_80_to_64
+  # Create instance: stage3_I, and set properties
+  set stage3_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage3_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage3.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {18} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {19} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {32} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage3_I
 
 
-  # Create instance: square_signed_1, and set properties
-  set block_name square_signed
-  set block_cell_name square_signed_1
-  if { [catch {set square_signed_1 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $square_signed_1 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-  
-  # Create instance: axis_sum80_0, and set properties
-  set block_name axis_sum80
-  set block_cell_name axis_sum80_0
-  if { [catch {set axis_sum80_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $axis_sum80_0 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-  
-  # Create instance: truncate_72_to_64, and set properties
-  set block_name truncate
-  set block_cell_name truncate_72_to_64
-  if { [catch {set truncate_72_to_64 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $truncate_72_to_64 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-    set_property -dict [list \
-    CONFIG.INPUT_WIDTH {72} \
-    CONFIG.OUTPUT_WIDTH {64} \
-  ] $truncate_72_to_64
+  # Create instance: stage4_I, and set properties
+  set stage4_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage4.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {19} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {20} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {16} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage4_I
 
 
-  # Create instance: adsb_fixed_detector_0, and set properties
-  set block_name adsb_fixed_detector
-  set block_cell_name adsb_fixed_detector_0
-  if { [catch {set adsb_fixed_detector_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $adsb_fixed_detector_0 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-  
-  # Create instance: adsb_iq_frame_gate_0, and set properties
-  set block_name adsb_iq_frame_gate
-  set block_cell_name adsb_iq_frame_gate_0
-  if { [catch {set adsb_iq_frame_gate_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   } elseif { $adsb_iq_frame_gate_0 eq "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
-     return 1
-   }
-  
+  # Create instance: axis_combiner_0, and set properties
+  set axis_combiner_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_combiner:1.1 axis_combiner_0 ]
+
+  # Create instance: stage5_I, and set properties
+  set stage5_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage5.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {20} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {21} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {8} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage5_I
+
+
+  # Create instance: stage6_I, and set properties
+  set stage6_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage6.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {21} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {22} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {4} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage6_I
+
+
+  # Create instance: stage7_I, and set properties
+  set stage7_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage7.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {22} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {23} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {2} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage7_I
+
+
+  # Create instance: axis_subset_converter_1, and set properties
+  set axis_subset_converter_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 axis_subset_converter_1 ]
+  set_property -dict [list \
+    CONFIG.M_TDATA_NUM_BYTES {2} \
+    CONFIG.S_TDATA_NUM_BYTES {3} \
+    CONFIG.TDATA_REMAP {tdata[15:0]} \
+  ] $axis_subset_converter_1
+
+
+  # Create instance: stage1_I1, and set properties
+  set stage1_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage1_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage1.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {16} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {17} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {128} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage1_I1
+
+
+  # Create instance: stage2_I1, and set properties
+  set stage2_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage2_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage2.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {17} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {18} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {64} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage2_I1
+
+
+  # Create instance: stage3_I1, and set properties
+  set stage3_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage3_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage3.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {18} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {19} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {32} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage3_I1
+
+
+  # Create instance: stage4_I1, and set properties
+  set stage4_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage4.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {19} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {20} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {16} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage4_I1
+
+
+  # Create instance: stage5_I1, and set properties
+  set stage5_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage5.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {20} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {21} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {8} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage5_I1
+
+
+  # Create instance: stage6_I1, and set properties
+  set stage6_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage6.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {21} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {22} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {4} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage6_I1
+
+
+  # Create instance: stage7_I1, and set properties
+  set stage7_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage7.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {22} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {23} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {2} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage7_I1
+
+
   # Create interface connections
-  connect_bd_intf_net -intf_net S_AXIS_1 [get_bd_intf_pins S_AXIS] [get_bd_intf_pins axis_broadcaster_0/S_AXIS]
-  connect_bd_intf_net -intf_net adsb_fixed_detector_0_m_axis_detect [get_bd_intf_pins adsb_fixed_detector_0/m_axis_detect] [get_bd_intf_pins adsb_iq_frame_gate_0/s_axis_detect]
-  connect_bd_intf_net -intf_net adsb_iq_frame_gate_0_m_axis_iq [get_bd_intf_pins M_AXIS] [get_bd_intf_pins adsb_iq_frame_gate_0/m_axis_iq]
-  connect_bd_intf_net -intf_net axis_broadcaster_0_M00_AXIS [get_bd_intf_pins axis_broadcaster_0/M00_AXIS] [get_bd_intf_pins axis_data_fifo_0/S_AXIS]
-  connect_bd_intf_net -intf_net axis_broadcaster_0_M01_AXIS [get_bd_intf_pins axis_broadcaster_0/M01_AXIS] [get_bd_intf_pins iq_to_power_0/s_axis]
-  connect_bd_intf_net -intf_net axis_broadcaster_1_M00_AXIS [get_bd_intf_pins axis_broadcaster_1/M00_AXIS] [get_bd_intf_pins preamble_corr/S_AXIS_DATA]
-  connect_bd_intf_net -intf_net axis_broadcaster_1_M01_AXIS [get_bd_intf_pins axis_broadcaster_1/M01_AXIS] [get_bd_intf_pins square_signed_1/s_axis]
-  connect_bd_intf_net -intf_net axis_data_fifo_0_M_AXIS [get_bd_intf_pins axis_data_fifo_0/M_AXIS] [get_bd_intf_pins adsb_iq_frame_gate_0/s_axis_iq]
-  connect_bd_intf_net -intf_net axis_sum80_0_m_axis [get_bd_intf_pins truncate_72_to_64/s_axis] [get_bd_intf_pins axis_sum80_0/m_axis]
-  connect_bd_intf_net -intf_net iq_to_power_0_m_axis [get_bd_intf_pins axis_broadcaster_1/S_AXIS] [get_bd_intf_pins iq_to_power_0/m_axis]
-  connect_bd_intf_net -intf_net preamble_corr_M_AXIS_DATA [get_bd_intf_pins square_signed_0/s_axis] [get_bd_intf_pins preamble_corr/M_AXIS_DATA]
-  connect_bd_intf_net -intf_net square_signed_0_m_axis [get_bd_intf_pins truncate_80_to_64/s_axis] [get_bd_intf_pins square_signed_0/m_axis]
-  connect_bd_intf_net -intf_net square_signed_1_m_axis [get_bd_intf_pins axis_sum80_0/s_axis] [get_bd_intf_pins square_signed_1/m_axis]
-  connect_bd_intf_net -intf_net truncate_72_to_64_m_axis [get_bd_intf_pins truncate_72_to_64/m_axis] [get_bd_intf_pins adsb_fixed_detector_0/s_axis_p]
-  connect_bd_intf_net -intf_net truncate_80_to_64_m_axis [get_bd_intf_pins adsb_fixed_detector_0/s_axis_c] [get_bd_intf_pins truncate_80_to_64/m_axis]
+  connect_bd_intf_net -intf_net S_AXIS_DATA_I_1 [get_bd_intf_pins S_AXIS_DATA_I] [get_bd_intf_pins stage1_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net S_AXIS_DATA_Q_1 [get_bd_intf_pins S_AXIS_DATA_Q] [get_bd_intf_pins stage1_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net axis_combiner_0_M_AXIS [get_bd_intf_pins M_AXIS] [get_bd_intf_pins axis_combiner_0/M_AXIS]
+  connect_bd_intf_net -intf_net axis_subset_converter_0_M_AXIS [get_bd_intf_pins axis_subset_converter_0/M_AXIS] [get_bd_intf_pins axis_combiner_0/S00_AXIS]
+  connect_bd_intf_net -intf_net axis_subset_converter_1_M_AXIS [get_bd_intf_pins axis_subset_converter_1/M_AXIS] [get_bd_intf_pins axis_combiner_0/S01_AXIS]
+  connect_bd_intf_net -intf_net stage1_I1_M_AXIS_DATA [get_bd_intf_pins stage1_I1/M_AXIS_DATA] [get_bd_intf_pins stage2_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage2_I1_M_AXIS_DATA [get_bd_intf_pins stage2_I1/M_AXIS_DATA] [get_bd_intf_pins stage3_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage3_I1_M_AXIS_DATA [get_bd_intf_pins stage3_I1/M_AXIS_DATA] [get_bd_intf_pins stage4_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage4_I1_M_AXIS_DATA [get_bd_intf_pins stage4_I1/M_AXIS_DATA] [get_bd_intf_pins stage5_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage4_I_M_AXIS_DATA [get_bd_intf_pins stage2_I/S_AXIS_DATA] [get_bd_intf_pins stage1_I/M_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage4_I_M_AXIS_DATA1 [get_bd_intf_pins stage4_I/M_AXIS_DATA] [get_bd_intf_pins stage5_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage5_I1_M_AXIS_DATA [get_bd_intf_pins stage5_I1/M_AXIS_DATA] [get_bd_intf_pins stage6_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage5_I_M_AXIS_DATA [get_bd_intf_pins stage2_I/M_AXIS_DATA] [get_bd_intf_pins stage3_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage5_I_M_AXIS_DATA1 [get_bd_intf_pins stage5_I/M_AXIS_DATA] [get_bd_intf_pins stage6_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage6_I1_M_AXIS_DATA [get_bd_intf_pins stage6_I1/M_AXIS_DATA] [get_bd_intf_pins stage7_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage6_I_M_AXIS_DATA [get_bd_intf_pins stage3_I/M_AXIS_DATA] [get_bd_intf_pins stage4_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage6_I_M_AXIS_DATA1 [get_bd_intf_pins stage6_I/M_AXIS_DATA] [get_bd_intf_pins stage7_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage7_I1_M_AXIS_DATA [get_bd_intf_pins stage7_I1/M_AXIS_DATA] [get_bd_intf_pins axis_subset_converter_1/S_AXIS]
+  connect_bd_intf_net -intf_net stage7_I_M_AXIS_DATA [get_bd_intf_pins stage7_I/M_AXIS_DATA] [get_bd_intf_pins axis_subset_converter_0/S_AXIS]
 
   # Create port connections
-  connect_bd_net -net aclk_1 [get_bd_pins aclk] [get_bd_pins axis_broadcaster_0/aclk] [get_bd_pins iq_to_power_0/aclk] [get_bd_pins axis_broadcaster_1/aclk] [get_bd_pins axis_data_fifo_0/s_axis_aclk] [get_bd_pins preamble_corr/aclk] [get_bd_pins square_signed_0/aclk] [get_bd_pins truncate_80_to_64/aclk] [get_bd_pins square_signed_1/aclk] [get_bd_pins axis_sum80_0/aclk] [get_bd_pins truncate_72_to_64/aclk] [get_bd_pins adsb_fixed_detector_0/aclk] [get_bd_pins adsb_iq_frame_gate_0/aclk]
-  connect_bd_net -net aresetn_1 [get_bd_pins aresetn] [get_bd_pins axis_broadcaster_0/aresetn] [get_bd_pins iq_to_power_0/aresetn] [get_bd_pins axis_broadcaster_1/aresetn] [get_bd_pins axis_data_fifo_0/s_axis_aresetn] [get_bd_pins square_signed_0/aresetn] [get_bd_pins truncate_80_to_64/aresetn] [get_bd_pins square_signed_1/aresetn] [get_bd_pins axis_sum80_0/aresetn] [get_bd_pins truncate_72_to_64/aresetn] [get_bd_pins adsb_fixed_detector_0/aresetn] [get_bd_pins adsb_iq_frame_gate_0/aresetn]
+  connect_bd_net -net aresetn_1 [get_bd_pins aresetn] [get_bd_pins axis_subset_converter_0/aresetn] [get_bd_pins axis_combiner_0/aresetn] [get_bd_pins axis_subset_converter_1/aresetn]
+  connect_bd_net -net rfdc_clk_adc0 [get_bd_pins aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins stage1_I/aclk] [get_bd_pins stage2_I/aclk] [get_bd_pins stage3_I/aclk] [get_bd_pins stage4_I/aclk] [get_bd_pins axis_combiner_0/aclk] [get_bd_pins stage5_I/aclk] [get_bd_pins stage6_I/aclk] [get_bd_pins stage7_I/aclk] [get_bd_pins stage1_I1/aclk] [get_bd_pins stage2_I1/aclk] [get_bd_pins stage3_I1/aclk] [get_bd_pins stage4_I1/aclk] [get_bd_pins stage5_I1/aclk] [get_bd_pins stage6_I1/aclk] [get_bd_pins stage7_I1/aclk] [get_bd_pins axis_subset_converter_1/aclk]
 
   # Perform GUI Layout
-  regenerate_bd_layout -hierarchy [get_bd_cells /detector_pipeline] -layout_string {
+  regenerate_bd_layout -hierarchy [get_bd_cells /decimation_pipeline1] -layout_string {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"1.23394",
-   "Default View_TopLeft":"857,-182",
+   "Default View_ScaleFactor":"0.655743",
+   "Default View_TopLeft":"-171,-615",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.7.1 2023-07-26 3bc4126617 VDI=43 GEI=38 GUI=JA:21.0
 #  -string -flagsOSRD
-preplace port S_AXIS -pg 1 -lvl 0 -x 0 -y 200 -defaultsOSRD
-preplace port M_AXIS -pg 1 -lvl 9 -x 2280 -y 190 -defaultsOSRD
-preplace port port-id_aclk -pg 1 -lvl 0 -x 0 -y 230 -defaultsOSRD
-preplace port port-id_aresetn -pg 1 -lvl 0 -x 0 -y 260 -defaultsOSRD
-preplace inst axis_broadcaster_0 -pg 1 -lvl 1 -x 180 -y 220 -defaultsOSRD
-preplace inst iq_to_power_0 -pg 1 -lvl 2 -x 450 -y 290 -defaultsOSRD
-preplace inst axis_broadcaster_1 -pg 1 -lvl 3 -x 730 -y 290 -defaultsOSRD
-preplace inst axis_data_fifo_0 -pg 1 -lvl 7 -x 1820 -y 320 -defaultsOSRD
-preplace inst preamble_corr -pg 1 -lvl 4 -x 1040 -y 70 -defaultsOSRD
-preplace inst square_signed_0 -pg 1 -lvl 5 -x 1300 -y 90 -defaultsOSRD
-preplace inst truncate_80_to_64 -pg 1 -lvl 6 -x 1540 -y 110 -defaultsOSRD
-preplace inst square_signed_1 -pg 1 -lvl 4 -x 1040 -y 320 -defaultsOSRD
-preplace inst axis_sum80_0 -pg 1 -lvl 5 -x 1300 -y 340 -defaultsOSRD
-preplace inst truncate_72_to_64 -pg 1 -lvl 6 -x 1540 -y 360 -defaultsOSRD
-preplace inst adsb_fixed_detector_0 -pg 1 -lvl 7 -x 1820 -y 140 -defaultsOSRD
-preplace inst adsb_iq_frame_gate_0 -pg 1 -lvl 8 -x 2120 -y 210 -defaultsOSRD
-preplace netloc aclk_1 1 0 8 20 300 340 370 570 370 890 140 1180 10 1420 30 1650 50 1970J
-preplace netloc aresetn_1 1 0 8 30 310 330 380 580 380 900 400 1190 170 1430 190 1680 240 NJ
-preplace netloc S_AXIS_1 1 0 1 NJ 200
-preplace netloc axis_broadcaster_0_M01_AXIS 1 1 1 340 230n
-preplace netloc iq_to_power_0_m_axis 1 2 1 560 270n
-preplace netloc axis_broadcaster_0_M00_AXIS 1 1 6 NJ 210 NJ 210 NJ 210 NJ 210 NJ 210 1670
-preplace netloc axis_broadcaster_1_M00_AXIS 1 3 1 880 60n
-preplace netloc preamble_corr_M_AXIS_DATA 1 4 1 N 70
-preplace netloc square_signed_0_m_axis 1 5 1 N 90
-preplace netloc axis_broadcaster_1_M01_AXIS 1 3 1 N 300
-preplace netloc square_signed_1_m_axis 1 4 1 N 320
-preplace netloc axis_sum80_0_m_axis 1 5 1 N 340
-preplace netloc truncate_80_to_64_m_axis 1 6 1 N 110
-preplace netloc truncate_72_to_64_m_axis 1 6 1 1660 130n
-preplace netloc axis_data_fifo_0_M_AXIS 1 7 1 1980 200n
-preplace netloc adsb_fixed_detector_0_m_axis_detect 1 7 1 1960 130n
-preplace netloc adsb_iq_frame_gate_0_m_axis_iq 1 8 1 N 190
-levelinfo -pg 1 0 180 450 730 1040 1300 1540 1820 2120 2280
-pagesize -pg 1 -db -bbox -sgen -100 0 2460 460
+preplace port S_AXIS_DATA_I -pg 1 -lvl 0 -x -20 -y 50 -defaultsOSRD
+preplace port S_AXIS_DATA_Q -pg 1 -lvl 0 -x -20 -y 210 -defaultsOSRD
+preplace port M_AXIS -pg 1 -lvl 10 -x 2630 -y 200 -defaultsOSRD
+preplace port port-id_aclk -pg 1 -lvl 0 -x -20 -y 240 -defaultsOSRD
+preplace port port-id_aresetn -pg 1 -lvl 0 -x -20 -y 150 -defaultsOSRD
+preplace inst axis_subset_converter_0 -pg 1 -lvl 8 -x 2150 -y 140 -defaultsOSRD
+preplace inst stage1_I -pg 1 -lvl 1 -x 150 -y 60 -defaultsOSRD
+preplace inst stage2_I -pg 1 -lvl 2 -x 430 -y 70 -defaultsOSRD
+preplace inst stage3_I -pg 1 -lvl 3 -x 710 -y 80 -defaultsOSRD
+preplace inst stage4_I -pg 1 -lvl 4 -x 1000 -y 90 -defaultsOSRD
+preplace inst axis_combiner_0 -pg 1 -lvl 9 -x 2460 -y 200 -defaultsOSRD
+preplace inst stage5_I -pg 1 -lvl 5 -x 1280 -y 100 -defaultsOSRD
+preplace inst stage6_I -pg 1 -lvl 6 -x 1560 -y 110 -defaultsOSRD
+preplace inst stage7_I -pg 1 -lvl 7 -x 1850 -y 120 -defaultsOSRD
+preplace inst axis_subset_converter_1 -pg 1 -lvl 8 -x 2150 -y 310 -defaultsOSRD
+preplace inst stage1_I1 -pg 1 -lvl 1 -x 150 -y 230 -defaultsOSRD
+preplace inst stage2_I1 -pg 1 -lvl 2 -x 430 -y 240 -defaultsOSRD
+preplace inst stage3_I1 -pg 1 -lvl 3 -x 710 -y 250 -defaultsOSRD
+preplace inst stage4_I1 -pg 1 -lvl 4 -x 1000 -y 260 -defaultsOSRD
+preplace inst stage5_I1 -pg 1 -lvl 5 -x 1280 -y 270 -defaultsOSRD
+preplace inst stage6_I1 -pg 1 -lvl 6 -x 1560 -y 280 -defaultsOSRD
+preplace inst stage7_I1 -pg 1 -lvl 7 -x 1850 -y 290 -defaultsOSRD
+preplace netloc aresetn_1 1 0 9 NJ 150 NJ 150 NJ 150 850J 180 NJ 180 NJ 180 1700J 200 2000 230 NJ
+preplace netloc rfdc_clk_adc0 1 0 9 10 160 290 160 570 160 860 190 1140 190 1420 190 1710 190 1990 220 2310J
+preplace netloc S_AXIS_DATA_I_1 1 0 1 NJ 50
+preplace netloc axis_combiner_0_M_AXIS 1 9 1 N 200
+preplace netloc axis_subset_converter_0_M_AXIS 1 8 1 2300 140n
+preplace netloc stage4_I_M_AXIS_DATA 1 1 1 N 60
+preplace netloc stage5_I_M_AXIS_DATA 1 2 1 N 70
+preplace netloc stage6_I_M_AXIS_DATA 1 3 1 N 80
+preplace netloc stage4_I_M_AXIS_DATA1 1 4 1 N 90
+preplace netloc stage5_I_M_AXIS_DATA1 1 5 1 N 100
+preplace netloc stage6_I_M_AXIS_DATA1 1 6 1 N 110
+preplace netloc stage7_I_M_AXIS_DATA 1 7 1 N 120
+preplace netloc stage1_I1_M_AXIS_DATA 1 1 1 N 230
+preplace netloc stage2_I1_M_AXIS_DATA 1 2 1 N 240
+preplace netloc stage3_I1_M_AXIS_DATA 1 3 1 N 250
+preplace netloc stage4_I1_M_AXIS_DATA 1 4 1 N 260
+preplace netloc stage5_I1_M_AXIS_DATA 1 5 1 N 270
+preplace netloc stage6_I1_M_AXIS_DATA 1 6 1 N 280
+preplace netloc stage7_I1_M_AXIS_DATA 1 7 1 N 290
+preplace netloc axis_subset_converter_1_M_AXIS 1 8 1 2300 190n
+preplace netloc S_AXIS_DATA_Q_1 1 0 1 0J 210n
+levelinfo -pg 1 -20 150 430 710 1000 1280 1560 1850 2150 2460 2630
+pagesize -pg 1 -db -bbox -sgen -170 -10 2730 390
 "
 }
 
@@ -522,19 +768,19 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   ] $axis_subset_converter_0
 
 
-  # Create instance: stage4_I, and set properties
-  set stage4_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I ]
+  # Create instance: stage1_I, and set properties
+  set stage1_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage1_I ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage4.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage1.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
-    CONFIG.ColumnConfig {4} \
+    CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {16} \
     CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
@@ -545,24 +791,24 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {17} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {320} \
+    CONFIG.Sample_Frequency {128} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage4_I
+  ] $stage1_I
 
 
-  # Create instance: stage5_I, and set properties
-  set stage5_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I ]
+  # Create instance: stage2_I, and set properties
+  set stage2_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage2_I ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage5.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage2.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
-    CONFIG.ColumnConfig {2} \
+    CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {17} \
     CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
@@ -573,18 +819,18 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {18} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {160} \
+    CONFIG.Sample_Frequency {64} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage5_I
+  ] $stage2_I
 
 
-  # Create instance: stage6_I, and set properties
-  set stage6_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I ]
+  # Create instance: stage3_I, and set properties
+  set stage3_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage3_I ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage6.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage3.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -601,26 +847,26 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {19} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {80} \
+    CONFIG.Sample_Frequency {32} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage6_I
+  ] $stage3_I
 
 
-  # Create instance: stage7_I, and set properties
-  set stage7_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I ]
+  # Create instance: stage4_I, and set properties
+  set stage4_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage7.coe} \
-    CONFIG.Coefficient_Fractional_Bits {18} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage4.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
     CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {19} \
-    CONFIG.Decimation_Rate {4} \
+    CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
     CONFIG.Filter_Type {Decimation} \
     CONFIG.Interpolation_Rate {1} \
@@ -629,7 +875,94 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {20} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {40} \
+    CONFIG.Sample_Frequency {16} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage4_I
+
+
+  # Create instance: axis_combiner_0, and set properties
+  set axis_combiner_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_combiner:1.1 axis_combiner_0 ]
+
+  # Create instance: stage5_I, and set properties
+  set stage5_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage5.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {20} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {21} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {8} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage5_I
+
+
+  # Create instance: stage6_I, and set properties
+  set stage6_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage6.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {21} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {22} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {4} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage6_I
+
+
+  # Create instance: stage7_I, and set properties
+  set stage7_I [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage7.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {22} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {23} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {2} \
     CONFIG.Zero_Pack_Factor {1} \
   ] $stage7_I
 
@@ -643,19 +976,19 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
   ] $axis_subset_converter_1
 
 
-  # Create instance: stage4_I1, and set properties
-  set stage4_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I1 ]
+  # Create instance: stage1_I1, and set properties
+  set stage1_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage1_I1 ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage4.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage1.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
-    CONFIG.ColumnConfig {4} \
+    CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {16} \
     CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
@@ -666,24 +999,24 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {17} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {320} \
+    CONFIG.Sample_Frequency {128} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage4_I1
+  ] $stage1_I1
 
 
-  # Create instance: stage5_I1, and set properties
-  set stage5_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I1 ]
+  # Create instance: stage2_I1, and set properties
+  set stage2_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage2_I1 ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage5.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage2.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
-    CONFIG.ColumnConfig {2} \
+    CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {17} \
     CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
@@ -694,18 +1027,18 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {18} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {160} \
+    CONFIG.Sample_Frequency {64} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage5_I1
+  ] $stage2_I1
 
 
-  # Create instance: stage6_I1, and set properties
-  set stage6_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I1 ]
+  # Create instance: stage3_I1, and set properties
+  set stage3_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage3_I1 ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage6.coe} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage3.coe} \
     CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
@@ -722,26 +1055,26 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {19} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {80} \
+    CONFIG.Sample_Frequency {32} \
     CONFIG.Zero_Pack_Factor {1} \
-  ] $stage6_I1
+  ] $stage3_I1
 
 
-  # Create instance: stage7_I1, and set properties
-  set stage7_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I1 ]
+  # Create instance: stage4_I1, and set properties
+  set stage4_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage4_I1 ]
   set_property -dict [list \
     CONFIG.BestPrecision {true} \
-    CONFIG.Clock_Frequency {160} \
+    CONFIG.Clock_Frequency {128} \
     CONFIG.CoefficientSource {COE_File} \
-    CONFIG.Coefficient_File {v:/coeffs/stage7.coe} \
-    CONFIG.Coefficient_Fractional_Bits {18} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage4.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
     CONFIG.Coefficient_Sets {1} \
     CONFIG.Coefficient_Sign {Signed} \
     CONFIG.Coefficient_Structure {Inferred} \
     CONFIG.Coefficient_Width {18} \
     CONFIG.ColumnConfig {1} \
     CONFIG.Data_Width {19} \
-    CONFIG.Decimation_Rate {4} \
+    CONFIG.Decimation_Rate {2} \
     CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
     CONFIG.Filter_Type {Decimation} \
     CONFIG.Interpolation_Rate {1} \
@@ -750,74 +1083,173 @@ proc create_hier_cell_decimation_pipeline { parentCell nameHier } {
     CONFIG.Output_Width {20} \
     CONFIG.Quantization {Quantize_Only} \
     CONFIG.RateSpecification {Frequency_Specification} \
-    CONFIG.Sample_Frequency {40} \
+    CONFIG.Sample_Frequency {16} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage4_I1
+
+
+  # Create instance: stage5_I1, and set properties
+  set stage5_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage5_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage5.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {20} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {21} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {8} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage5_I1
+
+
+  # Create instance: stage6_I1, and set properties
+  set stage6_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage6_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage6.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {21} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {22} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {4} \
+    CONFIG.Zero_Pack_Factor {1} \
+  ] $stage6_I1
+
+
+  # Create instance: stage7_I1, and set properties
+  set stage7_I1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:fir_compiler:7.2 stage7_I1 ]
+  set_property -dict [list \
+    CONFIG.BestPrecision {true} \
+    CONFIG.Clock_Frequency {128} \
+    CONFIG.CoefficientSource {COE_File} \
+    CONFIG.Coefficient_File {v:/coeffs/434mhz_stage7.coe} \
+    CONFIG.Coefficient_Fractional_Bits {17} \
+    CONFIG.Coefficient_Sets {1} \
+    CONFIG.Coefficient_Sign {Signed} \
+    CONFIG.Coefficient_Structure {Inferred} \
+    CONFIG.Coefficient_Width {18} \
+    CONFIG.ColumnConfig {1} \
+    CONFIG.Data_Width {22} \
+    CONFIG.Decimation_Rate {2} \
+    CONFIG.Filter_Architecture {Systolic_Multiply_Accumulate} \
+    CONFIG.Filter_Type {Decimation} \
+    CONFIG.Interpolation_Rate {1} \
+    CONFIG.Number_Channels {1} \
+    CONFIG.Output_Rounding_Mode {Convergent_Rounding_to_Even} \
+    CONFIG.Output_Width {23} \
+    CONFIG.Quantization {Quantize_Only} \
+    CONFIG.RateSpecification {Frequency_Specification} \
+    CONFIG.Sample_Frequency {2} \
     CONFIG.Zero_Pack_Factor {1} \
   ] $stage7_I1
 
 
-  # Create instance: axis_combiner_0, and set properties
-  set axis_combiner_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_combiner:1.1 axis_combiner_0 ]
-
   # Create interface connections
-  connect_bd_intf_net -intf_net S_AXIS_DATA_I_1 [get_bd_intf_pins S_AXIS_DATA_I] [get_bd_intf_pins stage4_I/S_AXIS_DATA]
-  connect_bd_intf_net -intf_net S_AXIS_DATA_Q_1 [get_bd_intf_pins S_AXIS_DATA_Q] [get_bd_intf_pins stage4_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net S_AXIS_DATA_I_1 [get_bd_intf_pins S_AXIS_DATA_I] [get_bd_intf_pins stage1_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net S_AXIS_DATA_Q_1 [get_bd_intf_pins S_AXIS_DATA_Q] [get_bd_intf_pins stage1_I1/S_AXIS_DATA]
   connect_bd_intf_net -intf_net axis_combiner_0_M_AXIS [get_bd_intf_pins M_AXIS] [get_bd_intf_pins axis_combiner_0/M_AXIS]
   connect_bd_intf_net -intf_net axis_subset_converter_0_M_AXIS [get_bd_intf_pins axis_subset_converter_0/M_AXIS] [get_bd_intf_pins axis_combiner_0/S00_AXIS]
   connect_bd_intf_net -intf_net axis_subset_converter_1_M_AXIS [get_bd_intf_pins axis_subset_converter_1/M_AXIS] [get_bd_intf_pins axis_combiner_0/S01_AXIS]
+  connect_bd_intf_net -intf_net stage1_I1_M_AXIS_DATA [get_bd_intf_pins stage1_I1/M_AXIS_DATA] [get_bd_intf_pins stage2_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage2_I1_M_AXIS_DATA [get_bd_intf_pins stage2_I1/M_AXIS_DATA] [get_bd_intf_pins stage3_I1/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage3_I1_M_AXIS_DATA [get_bd_intf_pins stage3_I1/M_AXIS_DATA] [get_bd_intf_pins stage4_I1/S_AXIS_DATA]
   connect_bd_intf_net -intf_net stage4_I1_M_AXIS_DATA [get_bd_intf_pins stage4_I1/M_AXIS_DATA] [get_bd_intf_pins stage5_I1/S_AXIS_DATA]
-  connect_bd_intf_net -intf_net stage4_I_M_AXIS_DATA [get_bd_intf_pins stage5_I/S_AXIS_DATA] [get_bd_intf_pins stage4_I/M_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage4_I_M_AXIS_DATA [get_bd_intf_pins stage2_I/S_AXIS_DATA] [get_bd_intf_pins stage1_I/M_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage4_I_M_AXIS_DATA1 [get_bd_intf_pins stage4_I/M_AXIS_DATA] [get_bd_intf_pins stage5_I/S_AXIS_DATA]
   connect_bd_intf_net -intf_net stage5_I1_M_AXIS_DATA [get_bd_intf_pins stage5_I1/M_AXIS_DATA] [get_bd_intf_pins stage6_I1/S_AXIS_DATA]
-  connect_bd_intf_net -intf_net stage5_I_M_AXIS_DATA [get_bd_intf_pins stage5_I/M_AXIS_DATA] [get_bd_intf_pins stage6_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage5_I_M_AXIS_DATA [get_bd_intf_pins stage2_I/M_AXIS_DATA] [get_bd_intf_pins stage3_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage5_I_M_AXIS_DATA1 [get_bd_intf_pins stage5_I/M_AXIS_DATA] [get_bd_intf_pins stage6_I/S_AXIS_DATA]
   connect_bd_intf_net -intf_net stage6_I1_M_AXIS_DATA [get_bd_intf_pins stage6_I1/M_AXIS_DATA] [get_bd_intf_pins stage7_I1/S_AXIS_DATA]
-  connect_bd_intf_net -intf_net stage6_I_M_AXIS_DATA [get_bd_intf_pins stage6_I/M_AXIS_DATA] [get_bd_intf_pins stage7_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage6_I_M_AXIS_DATA [get_bd_intf_pins stage3_I/M_AXIS_DATA] [get_bd_intf_pins stage4_I/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage6_I_M_AXIS_DATA1 [get_bd_intf_pins stage6_I/M_AXIS_DATA] [get_bd_intf_pins stage7_I/S_AXIS_DATA]
   connect_bd_intf_net -intf_net stage7_I1_M_AXIS_DATA [get_bd_intf_pins stage7_I1/M_AXIS_DATA] [get_bd_intf_pins axis_subset_converter_1/S_AXIS]
-  connect_bd_intf_net -intf_net stage7_I_M_AXIS_DATA [get_bd_intf_pins axis_subset_converter_0/S_AXIS] [get_bd_intf_pins stage7_I/M_AXIS_DATA]
+  connect_bd_intf_net -intf_net stage7_I_M_AXIS_DATA [get_bd_intf_pins stage7_I/M_AXIS_DATA] [get_bd_intf_pins axis_subset_converter_0/S_AXIS]
 
   # Create port connections
-  connect_bd_net -net aresetn_1 [get_bd_pins aresetn] [get_bd_pins axis_subset_converter_0/aresetn] [get_bd_pins axis_subset_converter_1/aresetn] [get_bd_pins axis_combiner_0/aresetn]
-  connect_bd_net -net rfdc_clk_adc0 [get_bd_pins aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins stage4_I/aclk] [get_bd_pins stage5_I/aclk] [get_bd_pins stage6_I/aclk] [get_bd_pins stage7_I/aclk] [get_bd_pins stage4_I1/aclk] [get_bd_pins stage5_I1/aclk] [get_bd_pins stage6_I1/aclk] [get_bd_pins stage7_I1/aclk] [get_bd_pins axis_subset_converter_1/aclk] [get_bd_pins axis_combiner_0/aclk]
+  connect_bd_net -net aresetn_1 [get_bd_pins aresetn] [get_bd_pins axis_subset_converter_0/aresetn] [get_bd_pins axis_combiner_0/aresetn] [get_bd_pins axis_subset_converter_1/aresetn]
+  connect_bd_net -net rfdc_clk_adc0 [get_bd_pins aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins stage1_I/aclk] [get_bd_pins stage2_I/aclk] [get_bd_pins stage3_I/aclk] [get_bd_pins stage4_I/aclk] [get_bd_pins axis_combiner_0/aclk] [get_bd_pins stage5_I/aclk] [get_bd_pins stage6_I/aclk] [get_bd_pins stage7_I/aclk] [get_bd_pins stage1_I1/aclk] [get_bd_pins stage2_I1/aclk] [get_bd_pins stage3_I1/aclk] [get_bd_pins stage4_I1/aclk] [get_bd_pins stage5_I1/aclk] [get_bd_pins stage6_I1/aclk] [get_bd_pins stage7_I1/aclk] [get_bd_pins axis_subset_converter_1/aclk]
 
   # Perform GUI Layout
   regenerate_bd_layout -hierarchy [get_bd_cells /decimation_pipeline] -layout_string {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"1.4924",
-   "Default View_TopLeft":"-131,-129",
+   "Default View_ScaleFactor":"1.06895",
+   "Default View_TopLeft":"-151,-321",
    "ExpandedHierarchyInLayout":"",
    "guistr":"# # String gsaved with Nlview 7.7.1 2023-07-26 3bc4126617 VDI=43 GEI=38 GUI=JA:21.0
 #  -string -flagsOSRD
 preplace port S_AXIS_DATA_I -pg 1 -lvl 0 -x 0 -y 60 -defaultsOSRD
-preplace port S_AXIS_DATA_Q -pg 1 -lvl 0 -x 0 -y 240 -defaultsOSRD
-preplace port M_AXIS -pg 1 -lvl 7 -x 1830 -y 190 -defaultsOSRD
-preplace port port-id_aclk -pg 1 -lvl 0 -x 0 -y 270 -defaultsOSRD
-preplace port port-id_aresetn -pg 1 -lvl 0 -x 0 -y 170 -defaultsOSRD
-preplace inst axis_subset_converter_0 -pg 1 -lvl 5 -x 1360 -y 120 -defaultsOSRD
-preplace inst stage4_I -pg 1 -lvl 1 -x 180 -y 70 -defaultsOSRD
-preplace inst stage5_I -pg 1 -lvl 2 -x 480 -y 80 -defaultsOSRD
-preplace inst stage6_I -pg 1 -lvl 3 -x 770 -y 90 -defaultsOSRD
-preplace inst stage7_I -pg 1 -lvl 4 -x 1060 -y 100 -defaultsOSRD
-preplace inst axis_subset_converter_1 -pg 1 -lvl 5 -x 1360 -y 300 -defaultsOSRD
-preplace inst stage4_I1 -pg 1 -lvl 1 -x 180 -y 250 -defaultsOSRD
-preplace inst stage5_I1 -pg 1 -lvl 2 -x 480 -y 260 -defaultsOSRD
-preplace inst stage6_I1 -pg 1 -lvl 3 -x 770 -y 270 -defaultsOSRD
-preplace inst stage7_I1 -pg 1 -lvl 4 -x 1060 -y 280 -defaultsOSRD
-preplace inst axis_combiner_0 -pg 1 -lvl 6 -x 1660 -y 190 -defaultsOSRD
-preplace netloc aresetn_1 1 0 6 NJ 170 NJ 170 NJ 170 NJ 170 1210 220 NJ
-preplace netloc rfdc_clk_adc0 1 0 6 50 140 350 150 640 180 930 180 1200 200 NJ
+preplace port S_AXIS_DATA_Q -pg 1 -lvl 0 -x 0 -y 230 -defaultsOSRD
+preplace port M_AXIS -pg 1 -lvl 10 -x 2640 -y 210 -defaultsOSRD
+preplace port port-id_aclk -pg 1 -lvl 0 -x 0 -y 260 -defaultsOSRD
+preplace port port-id_aresetn -pg 1 -lvl 0 -x 0 -y 160 -defaultsOSRD
+preplace inst axis_subset_converter_0 -pg 1 -lvl 8 -x 2160 -y 150 -defaultsOSRD
+preplace inst stage1_I -pg 1 -lvl 1 -x 160 -y 70 -defaultsOSRD
+preplace inst stage2_I -pg 1 -lvl 2 -x 450 -y 80 -defaultsOSRD
+preplace inst stage3_I -pg 1 -lvl 3 -x 730 -y 90 -defaultsOSRD
+preplace inst stage4_I -pg 1 -lvl 4 -x 1010 -y 100 -defaultsOSRD
+preplace inst axis_combiner_0 -pg 1 -lvl 9 -x 2470 -y 210 -defaultsOSRD
+preplace inst stage5_I -pg 1 -lvl 5 -x 1290 -y 110 -defaultsOSRD
+preplace inst stage6_I -pg 1 -lvl 6 -x 1570 -y 120 -defaultsOSRD
+preplace inst stage7_I -pg 1 -lvl 7 -x 1860 -y 130 -defaultsOSRD
+preplace inst axis_subset_converter_1 -pg 1 -lvl 8 -x 2160 -y 320 -defaultsOSRD
+preplace inst stage1_I1 -pg 1 -lvl 1 -x 160 -y 240 -defaultsOSRD
+preplace inst stage2_I1 -pg 1 -lvl 2 -x 450 -y 250 -defaultsOSRD
+preplace inst stage3_I1 -pg 1 -lvl 3 -x 730 -y 260 -defaultsOSRD
+preplace inst stage4_I1 -pg 1 -lvl 4 -x 1010 -y 270 -defaultsOSRD
+preplace inst stage5_I1 -pg 1 -lvl 5 -x 1290 -y 280 -defaultsOSRD
+preplace inst stage6_I1 -pg 1 -lvl 6 -x 1570 -y 290 -defaultsOSRD
+preplace inst stage7_I1 -pg 1 -lvl 7 -x 1860 -y 300 -defaultsOSRD
+preplace netloc aresetn_1 1 0 9 NJ 160 290J 10 NJ 10 NJ 10 NJ 10 NJ 10 NJ 10 2010 240 NJ
+preplace netloc rfdc_clk_adc0 1 0 9 30 140 320 150 600 160 880 170 1160 180 1440 190 1730 60 2000 230 2320J
 preplace netloc S_AXIS_DATA_I_1 1 0 1 NJ 60
-preplace netloc S_AXIS_DATA_Q_1 1 0 1 NJ 240
-preplace netloc axis_combiner_0_M_AXIS 1 6 1 N 190
-preplace netloc axis_subset_converter_0_M_AXIS 1 5 1 1510 120n
-preplace netloc axis_subset_converter_1_M_AXIS 1 5 1 1510 180n
-preplace netloc stage4_I1_M_AXIS_DATA 1 1 1 N 250
+preplace netloc axis_combiner_0_M_AXIS 1 9 1 N 210
+preplace netloc axis_subset_converter_0_M_AXIS 1 8 1 2310 150n
 preplace netloc stage4_I_M_AXIS_DATA 1 1 1 N 70
-preplace netloc stage5_I1_M_AXIS_DATA 1 2 1 N 260
 preplace netloc stage5_I_M_AXIS_DATA 1 2 1 N 80
-preplace netloc stage6_I1_M_AXIS_DATA 1 3 1 N 270
 preplace netloc stage6_I_M_AXIS_DATA 1 3 1 N 90
-preplace netloc stage7_I1_M_AXIS_DATA 1 4 1 N 280
-preplace netloc stage7_I_M_AXIS_DATA 1 4 1 N 100
-levelinfo -pg 1 0 180 480 770 1060 1360 1660 1830
-pagesize -pg 1 -db -bbox -sgen -150 0 1990 390
+preplace netloc stage4_I_M_AXIS_DATA1 1 4 1 N 100
+preplace netloc stage5_I_M_AXIS_DATA1 1 5 1 N 110
+preplace netloc stage6_I_M_AXIS_DATA1 1 6 1 N 120
+preplace netloc stage7_I_M_AXIS_DATA 1 7 1 N 130
+preplace netloc stage1_I1_M_AXIS_DATA 1 1 1 N 240
+preplace netloc stage2_I1_M_AXIS_DATA 1 2 1 N 250
+preplace netloc stage3_I1_M_AXIS_DATA 1 3 1 N 260
+preplace netloc stage4_I1_M_AXIS_DATA 1 4 1 N 270
+preplace netloc stage5_I1_M_AXIS_DATA 1 5 1 N 280
+preplace netloc stage6_I1_M_AXIS_DATA 1 6 1 N 290
+preplace netloc stage7_I1_M_AXIS_DATA 1 7 1 N 300
+preplace netloc axis_subset_converter_1_M_AXIS 1 8 1 2310 200n
+preplace netloc S_AXIS_DATA_Q_1 1 0 1 NJ 230
+levelinfo -pg 1 0 160 450 730 1010 1290 1570 1860 2160 2470 2640
+pagesize -pg 1 -db -bbox -sgen -150 0 2740 400
 "
 }
 
@@ -867,6 +1299,8 @@ proc create_root_design { parentCell } {
    ] $adc1_clk
 
   set vin1_01 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_analog_io_rtl:1.0 vin1_01 ]
+
+  set vin1_23 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_analog_io_rtl:1.0 vin1_23 ]
 
 
   # Create ports
@@ -1221,36 +1655,64 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   ] $axi_dma_0
 
 
-  # Create instance: rst_ps8_0_99M, and set properties
-  set rst_ps8_0_99M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps8_0_99M ]
+  # Create instance: proc_sys_reset_0, and set properties
+  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0 ]
+
+  # Create instance: axis_data_fifo_0, and set properties
+  set axis_data_fifo_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 axis_data_fifo_0 ]
+  set_property CONFIG.FIFO_DEPTH {32768} $axis_data_fifo_0
+
+
+  # Create instance: axis_subset_converter_0, and set properties
+  set axis_subset_converter_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 axis_subset_converter_0 ]
+  set_property -dict [list \
+    CONFIG.DEFAULT_TLAST {256} \
+    CONFIG.M_HAS_TLAST {1} \
+  ] $axis_subset_converter_0
+
 
   # Create instance: usp_rf_data_converter_0, and set properties
   set usp_rf_data_converter_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:usp_rf_data_converter:2.6 usp_rf_data_converter_0 ]
   set_property -dict [list \
-    CONFIG.ADC1_Outclk_Freq {160.000} \
+    CONFIG.ADC1_Outclk_Freq {64.000} \
     CONFIG.ADC1_PLL_Enable {true} \
     CONFIG.ADC1_Refclk_Freq {409.600} \
-    CONFIG.ADC1_Sampling_Rate {2.560} \
+    CONFIG.ADC1_Sampling_Rate {1.024} \
     CONFIG.ADC_Data_Type10 {1} \
-    CONFIG.ADC_Data_Width10 {2} \
+    CONFIG.ADC_Data_Type12 {1} \
+    CONFIG.ADC_Data_Width10 {1} \
+    CONFIG.ADC_Data_Width12 {1} \
     CONFIG.ADC_Decimation_Mode10 {8} \
     CONFIG.ADC_Mixer_Mode10 {0} \
     CONFIG.ADC_Mixer_Type10 {2} \
-    CONFIG.ADC_NCO_Freq10 {-1.09} \
+    CONFIG.ADC_Mixer_Type12 {2} \
+    CONFIG.ADC_NCO_Freq10 {-0.434} \
+    CONFIG.ADC_NCO_Freq12 {-0.434} \
     CONFIG.ADC_Slice00_Enable {false} \
     CONFIG.ADC_Slice10_Enable {true} \
+    CONFIG.ADC_Slice12_Enable {true} \
   ] $usp_rf_data_converter_0
 
 
-  # Create instance: proc_sys_reset_0, and set properties
-  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0 ]
+  # Create instance: axis_combiner_0, and set properties
+  set axis_combiner_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_combiner:1.1 axis_combiner_0 ]
 
-  # Create instance: detector_pipeline
-  create_hier_cell_detector_pipeline [current_bd_instance .] detector_pipeline
-
-  # Create instance: axis_data_fifo_0, and set properties
-  set axis_data_fifo_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 axis_data_fifo_0 ]
-  set_property CONFIG.FIFO_DEPTH {8192} $axis_data_fifo_0
+  # Create instance: clk_wiz_0, and set properties
+  set clk_wiz_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_wiz_0 ]
+  set_property -dict [list \
+    CONFIG.CLKIN1_JITTER_PS {156.25} \
+    CONFIG.CLKOUT1_JITTER {120.187} \
+    CONFIG.CLKOUT1_PHASE_ERROR {121.856} \
+    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {128} \
+    CONFIG.MMCM_CLKFBOUT_MULT_F {18.750} \
+    CONFIG.MMCM_CLKIN1_PERIOD {15.625} \
+    CONFIG.MMCM_CLKIN2_PERIOD {10.0} \
+    CONFIG.MMCM_CLKOUT0_DIVIDE_F {9.375} \
+    CONFIG.PRIM_IN_FREQ {64} \
+    CONFIG.PRIM_SOURCE {Global_buffer} \
+    CONFIG.RESET_PORT {resetn} \
+    CONFIG.RESET_TYPE {ACTIVE_LOW} \
+  ] $clk_wiz_0
 
 
   # Create instance: ps8_0_axi_periph, and set properties
@@ -1261,6 +1723,9 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   ] $ps8_0_axi_periph
 
 
+  # Create instance: rst_ps8_0_99M, and set properties
+  set rst_ps8_0_99M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps8_0_99M ]
+
   # Create instance: axi_smc, and set properties
   set axi_smc [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 axi_smc ]
   set_property -dict [list \
@@ -1269,28 +1734,38 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   ] $axi_smc
 
 
+  # Create instance: decimation_pipeline1
+  create_hier_cell_decimation_pipeline1 [current_bd_instance .] decimation_pipeline1
+
   # Create interface connections
+  connect_bd_intf_net -intf_net S_AXIS_DATA_I_1 [get_bd_intf_pins decimation_pipeline1/S_AXIS_DATA_I] [get_bd_intf_pins usp_rf_data_converter_0/m12_axis]
+  connect_bd_intf_net -intf_net S_AXIS_DATA_Q_1 [get_bd_intf_pins decimation_pipeline1/S_AXIS_DATA_Q] [get_bd_intf_pins usp_rf_data_converter_0/m13_axis]
   connect_bd_intf_net -intf_net adc1_clk_1 [get_bd_intf_ports adc1_clk] [get_bd_intf_pins usp_rf_data_converter_0/adc1_clk]
   connect_bd_intf_net -intf_net axi_dma_0_M_AXI_S2MM [get_bd_intf_pins axi_dma_0/M_AXI_S2MM] [get_bd_intf_pins axi_smc/S00_AXI]
   connect_bd_intf_net -intf_net axi_smc_M00_AXI [get_bd_intf_pins axi_smc/M00_AXI] [get_bd_intf_pins zynq_ultra_ps_e_0/S_AXI_HP0_FPD]
-  connect_bd_intf_net -intf_net axis_data_fifo_0_M_AXIS [get_bd_intf_pins axis_data_fifo_0/M_AXIS] [get_bd_intf_pins axi_dma_0/S_AXIS_S2MM]
-  connect_bd_intf_net -intf_net decimation_pipeline_M_AXIS [get_bd_intf_pins detector_pipeline/S_AXIS] [get_bd_intf_pins decimation_pipeline/M_AXIS]
-  connect_bd_intf_net -intf_net detector_pipeline_M_AXIS [get_bd_intf_pins detector_pipeline/M_AXIS] [get_bd_intf_pins axis_data_fifo_0/S_AXIS]
+  connect_bd_intf_net -intf_net axis_combiner_0_M_AXIS [get_bd_intf_pins axis_combiner_0/M_AXIS] [get_bd_intf_pins axis_data_fifo_0/S_AXIS]
+  connect_bd_intf_net -intf_net axis_data_fifo_0_M_AXIS [get_bd_intf_pins axis_data_fifo_0/M_AXIS] [get_bd_intf_pins axis_subset_converter_0/S_AXIS]
+  connect_bd_intf_net -intf_net axis_subset_converter_0_M_AXIS [get_bd_intf_pins axis_subset_converter_0/M_AXIS] [get_bd_intf_pins axi_dma_0/S_AXIS_S2MM]
+  connect_bd_intf_net -intf_net decimation_pipeline1_M_AXIS [get_bd_intf_pins decimation_pipeline1/M_AXIS] [get_bd_intf_pins axis_combiner_0/S01_AXIS]
+  connect_bd_intf_net -intf_net decimation_pipeline_M_AXIS [get_bd_intf_pins decimation_pipeline/M_AXIS] [get_bd_intf_pins axis_combiner_0/S00_AXIS]
   connect_bd_intf_net -intf_net ps8_0_axi_periph_M00_AXI [get_bd_intf_pins ps8_0_axi_periph/M00_AXI] [get_bd_intf_pins axi_dma_0/S_AXI_LITE]
   connect_bd_intf_net -intf_net ps8_0_axi_periph_M01_AXI [get_bd_intf_pins ps8_0_axi_periph/M01_AXI] [get_bd_intf_pins usp_rf_data_converter_0/s_axi]
   connect_bd_intf_net -intf_net sysref_in_1 [get_bd_intf_ports sysref_in] [get_bd_intf_pins usp_rf_data_converter_0/sysref_in]
   connect_bd_intf_net -intf_net usp_rf_data_converter_0_m10_axis [get_bd_intf_pins usp_rf_data_converter_0/m10_axis] [get_bd_intf_pins decimation_pipeline/S_AXIS_DATA_I]
   connect_bd_intf_net -intf_net usp_rf_data_converter_0_m11_axis [get_bd_intf_pins usp_rf_data_converter_0/m11_axis] [get_bd_intf_pins decimation_pipeline/S_AXIS_DATA_Q]
   connect_bd_intf_net -intf_net vin1_01_1 [get_bd_intf_ports vin1_01] [get_bd_intf_pins usp_rf_data_converter_0/vin1_01]
+  connect_bd_intf_net -intf_net vin1_23_1 [get_bd_intf_ports vin1_23] [get_bd_intf_pins usp_rf_data_converter_0/vin1_23]
   connect_bd_intf_net -intf_net zynq_ultra_ps_e_0_M_AXI_HPM0_FPD [get_bd_intf_pins zynq_ultra_ps_e_0/M_AXI_HPM0_FPD] [get_bd_intf_pins ps8_0_axi_periph/S00_AXI]
   connect_bd_intf_net -intf_net zynq_ultra_ps_e_0_M_AXI_HPM1_FPD [get_bd_intf_pins zynq_ultra_ps_e_0/M_AXI_HPM1_FPD] [get_bd_intf_pins ps8_0_axi_periph/S01_AXI]
 
   # Create port connections
-  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn [get_bd_pins proc_sys_reset_0/peripheral_aresetn] [get_bd_pins usp_rf_data_converter_0/m1_axis_aresetn] [get_bd_pins decimation_pipeline/aresetn] [get_bd_pins detector_pipeline/aresetn] [get_bd_pins axis_data_fifo_0/s_axis_aresetn]
-  connect_bd_net -net rst_ps8_0_99M_peripheral_aresetn [get_bd_pins rst_ps8_0_99M/peripheral_aresetn] [get_bd_pins axi_dma_0/axi_resetn] [get_bd_pins usp_rf_data_converter_0/s_axi_aresetn] [get_bd_pins ps8_0_axi_periph/S00_ARESETN] [get_bd_pins ps8_0_axi_periph/M00_ARESETN] [get_bd_pins ps8_0_axi_periph/ARESETN] [get_bd_pins ps8_0_axi_periph/M01_ARESETN] [get_bd_pins axi_smc/aresetn] [get_bd_pins ps8_0_axi_periph/S01_ARESETN]
-  connect_bd_net -net usp_rf_data_converter_0_clk_adc1 [get_bd_pins usp_rf_data_converter_0/clk_adc1] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] [get_bd_pins usp_rf_data_converter_0/m1_axis_aclk] [get_bd_pins decimation_pipeline/aclk] [get_bd_pins detector_pipeline/aclk] [get_bd_pins axis_data_fifo_0/s_axis_aclk] [get_bd_pins axi_dma_0/m_axi_s2mm_aclk] [get_bd_pins axi_smc/aclk]
-  connect_bd_net -net zynq_ultra_ps_e_0_pl_clk0 [get_bd_pins zynq_ultra_ps_e_0/pl_clk0] [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_fpd_aclk] [get_bd_pins rst_ps8_0_99M/slowest_sync_clk] [get_bd_pins axi_dma_0/s_axi_lite_aclk] [get_bd_pins zynq_ultra_ps_e_0/saxihp0_fpd_aclk] [get_bd_pins zynq_ultra_ps_e_0/maxihpm1_fpd_aclk] [get_bd_pins usp_rf_data_converter_0/s_axi_aclk] [get_bd_pins ps8_0_axi_periph/ACLK] [get_bd_pins ps8_0_axi_periph/S00_ACLK] [get_bd_pins ps8_0_axi_periph/M00_ACLK] [get_bd_pins ps8_0_axi_periph/M01_ACLK] [get_bd_pins axi_smc/aclk1] [get_bd_pins ps8_0_axi_periph/S01_ACLK]
-  connect_bd_net -net zynq_ultra_ps_e_0_pl_resetn0 [get_bd_pins zynq_ultra_ps_e_0/pl_resetn0] [get_bd_pins rst_ps8_0_99M/ext_reset_in] [get_bd_pins proc_sys_reset_0/ext_reset_in]
+  connect_bd_net -net clk_wiz_0_locked [get_bd_pins clk_wiz_0/locked] [get_bd_pins proc_sys_reset_0/dcm_locked]
+  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn [get_bd_pins proc_sys_reset_0/peripheral_aresetn] [get_bd_pins decimation_pipeline/aresetn] [get_bd_pins axis_data_fifo_0/s_axis_aresetn] [get_bd_pins axis_subset_converter_0/aresetn] [get_bd_pins usp_rf_data_converter_0/m1_axis_aresetn] [get_bd_pins axis_combiner_0/aresetn] [get_bd_pins decimation_pipeline1/aresetn]
+  connect_bd_net -net rst_ps8_0_99M_peripheral_aresetn [get_bd_pins rst_ps8_0_99M/peripheral_aresetn] [get_bd_pins ps8_0_axi_periph/S00_ARESETN] [get_bd_pins axi_dma_0/axi_resetn] [get_bd_pins usp_rf_data_converter_0/s_axi_aresetn] [get_bd_pins ps8_0_axi_periph/M00_ARESETN] [get_bd_pins ps8_0_axi_periph/ARESETN] [get_bd_pins ps8_0_axi_periph/M01_ARESETN] [get_bd_pins axi_smc/aresetn] [get_bd_pins ps8_0_axi_periph/S01_ARESETN]
+  connect_bd_net -net usp_rf_data_converter_0_clk_adc1 [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] [get_bd_pins decimation_pipeline/aclk] [get_bd_pins axis_data_fifo_0/s_axis_aclk] [get_bd_pins axi_dma_0/m_axi_s2mm_aclk] [get_bd_pins axis_subset_converter_0/aclk] [get_bd_pins usp_rf_data_converter_0/m1_axis_aclk] [get_bd_pins axis_combiner_0/aclk] [get_bd_pins axi_smc/aclk] [get_bd_pins decimation_pipeline1/aclk]
+  connect_bd_net -net usp_rf_data_converter_0_clk_adc2 [get_bd_pins usp_rf_data_converter_0/clk_adc1] [get_bd_pins clk_wiz_0/clk_in1]
+  connect_bd_net -net zynq_ultra_ps_e_0_pl_clk0 [get_bd_pins zynq_ultra_ps_e_0/pl_clk0] [get_bd_pins zynq_ultra_ps_e_0/maxihpm0_fpd_aclk] [get_bd_pins axi_dma_0/s_axi_lite_aclk] [get_bd_pins zynq_ultra_ps_e_0/saxihp0_fpd_aclk] [get_bd_pins zynq_ultra_ps_e_0/maxihpm1_fpd_aclk] [get_bd_pins usp_rf_data_converter_0/s_axi_aclk] [get_bd_pins ps8_0_axi_periph/ACLK] [get_bd_pins ps8_0_axi_periph/S00_ACLK] [get_bd_pins rst_ps8_0_99M/slowest_sync_clk] [get_bd_pins ps8_0_axi_periph/M00_ACLK] [get_bd_pins ps8_0_axi_periph/M01_ACLK] [get_bd_pins axi_smc/aclk1] [get_bd_pins ps8_0_axi_periph/S01_ACLK]
+  connect_bd_net -net zynq_ultra_ps_e_0_pl_resetn0 [get_bd_pins zynq_ultra_ps_e_0/pl_resetn0] [get_bd_pins proc_sys_reset_0/ext_reset_in] [get_bd_pins rst_ps8_0_99M/ext_reset_in] [get_bd_pins clk_wiz_0/resetn]
 
   # Create address segments
   assign_bd_address -offset 0xA0000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] [get_bd_addr_segs axi_dma_0/S_AXI_LITE/Reg] -force
@@ -1299,51 +1774,62 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   assign_bd_address -offset 0xC0000000 -range 0x20000000 -target_address_space [get_bd_addr_spaces axi_dma_0/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_QSPI] -force
 
   # Exclude Address Segments
-  exclude_bd_addr_seg -target_address_space [get_bd_addr_spaces axi_dma_0/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_DDR_HIGH]
+  exclude_bd_addr_seg -offset 0x000800000000 -range 0x000100000000 -target_address_space [get_bd_addr_spaces axi_dma_0/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_DDR_HIGH]
   exclude_bd_addr_seg -offset 0xFF000000 -range 0x01000000 -target_address_space [get_bd_addr_spaces axi_dma_0/Data_S2MM] [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP2/HP0_LPS_OCM]
 
   # Perform GUI Layout
   regenerate_bd_layout -layout_string {
    "ActiveEmotionalView":"Default View",
-   "Default View_ScaleFactor":"1.60076",
-   "Default View_TopLeft":"486,186",
+   "Default View_ScaleFactor":"1.424",
+   "Default View_TopLeft":"756,-46",
    "ExpandedHierarchyInLayout":"",
-   "guistr":"# # String gsaved with Nlview 7.7.1 2023-07-26 3bc4126617 VDI=43 GEI=38 GUI=JA:21.0
+   "guistr":"# # String gsaved with Nlview 7.7.1 2023-07-26 3bc4126617 VDI=43 GEI=38 GUI=JA:21.0 threadsafe
 #  -string -flagsOSRD
-preplace port sysref_in -pg 1 -lvl 0 -x -10 -y 340 -defaultsOSRD
-preplace port adc1_clk -pg 1 -lvl 0 -x -10 -y 280 -defaultsOSRD
-preplace port vin1_01 -pg 1 -lvl 0 -x -10 -y 310 -defaultsOSRD
-preplace inst decimation_pipeline -pg 1 -lvl 3 -x 850 -y 340 -defaultsOSRD
-preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 8 -x 2450 -y 400 -defaultsOSRD
-preplace inst axi_dma_0 -pg 1 -lvl 6 -x 1680 -y 400 -defaultsOSRD
-preplace inst rst_ps8_0_99M -pg 1 -lvl 1 -x 210 -y 440 -defaultsOSRD
-preplace inst usp_rf_data_converter_0 -pg 1 -lvl 2 -x 550 -y 340 -defaultsOSRD
-preplace inst proc_sys_reset_0 -pg 1 -lvl 1 -x 210 -y 110 -defaultsOSRD
-preplace inst detector_pipeline -pg 1 -lvl 4 -x 1140 -y 360 -defaultsOSRD
-preplace inst axis_data_fifo_0 -pg 1 -lvl 5 -x 1370 -y 380 -defaultsOSRD
-preplace inst ps8_0_axi_periph -pg 1 -lvl 9 -x 2900 -y 470 -defaultsOSRD
-preplace inst axi_smc -pg 1 -lvl 7 -x 2000 -y 620 -defaultsOSRD
-preplace netloc proc_sys_reset_0_peripheral_aresetn 1 1 4 390 470 720 420 1040 430 1240J
-preplace netloc rst_ps8_0_99M_peripheral_aresetn 1 1 8 410 480 NJ 480 NJ 480 NJ 480 1510 540 1870 530 2130J 540 2760
-preplace netloc usp_rf_data_converter_0_clk_adc1 1 0 7 40 540 400 490 680 430 1030 440 1250 460 1500 610 NJ
-preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 0 9 30 550 380 530 NJ 530 NJ 530 NJ 530 1490 530 1840 490 2160 530 2750
-preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 0 9 20 560 NJ 560 NJ 560 NJ 560 NJ 560 NJ 560 1850J 500 NJ 500 2740
-preplace netloc decimation_pipeline_M_AXIS 1 3 1 N 340
-preplace netloc usp_rf_data_converter_0_m10_axis 1 2 1 N 310
-preplace netloc usp_rf_data_converter_0_m11_axis 1 2 1 N 330
-preplace netloc detector_pipeline_M_AXIS 1 4 1 N 360
-preplace netloc axis_data_fifo_0_M_AXIS 1 5 1 N 380
-preplace netloc sysref_in_1 1 0 2 10J 330 NJ
-preplace netloc adc1_clk_1 1 0 2 NJ 280 380J
-preplace netloc vin1_01_1 1 0 2 NJ 310 NJ
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 8 1 N 360
-preplace netloc ps8_0_axi_periph_M00_AXI 1 5 5 1520 510 NJ 510 2140J 650 NJ 650 3050
-preplace netloc ps8_0_axi_periph_M01_AXI 1 1 9 420 520 NJ 520 NJ 520 NJ 520 NJ 520 NJ 520 NJ 520 2740J 640 3040
-preplace netloc axi_dma_0_M_AXI_S2MM 1 6 1 1860 380n
-preplace netloc axi_smc_M00_AXI 1 7 1 2150 360n
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 8 1 N 380
-levelinfo -pg 1 -10 210 550 850 1140 1370 1680 2000 2450 2900 3070
-pagesize -pg 1 -db -bbox -sgen -120 0 3130 710
+preplace port sysref_in -pg 1 -lvl 0 -x 0 -y 230 -defaultsOSRD
+preplace port adc1_clk -pg 1 -lvl 0 -x 0 -y 140 -defaultsOSRD
+preplace port vin1_01 -pg 1 -lvl 0 -x 0 -y 170 -defaultsOSRD
+preplace port vin1_23 -pg 1 -lvl 0 -x 0 -y 200 -defaultsOSRD
+preplace inst decimation_pipeline -pg 1 -lvl 3 -x 910 -y 210 -defaultsOSRD
+preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 8 -x 2700 -y 150 -defaultsOSRD
+preplace inst axi_dma_0 -pg 1 -lvl 7 -x 2220 -y 120 -defaultsOSRD
+preplace inst proc_sys_reset_0 -pg 1 -lvl 1 -x 230 -y 340 -defaultsOSRD
+preplace inst axis_data_fifo_0 -pg 1 -lvl 5 -x 1540 -y 290 -defaultsOSRD
+preplace inst axis_subset_converter_0 -pg 1 -lvl 6 -x 1860 -y 100 -defaultsOSRD
+preplace inst usp_rf_data_converter_0 -pg 1 -lvl 2 -x 600 -y 230 -defaultsOSRD
+preplace inst axis_combiner_0 -pg 1 -lvl 4 -x 1250 -y 340 -defaultsOSRD
+preplace inst clk_wiz_0 -pg 1 -lvl 1 -x 230 -y 580 -defaultsOSRD
+preplace inst ps8_0_axi_periph -pg 1 -lvl 10 -x 3550 -y -210 -defaultsOSRD
+preplace inst rst_ps8_0_99M -pg 1 -lvl 9 -x 3220 -y -70 -defaultsOSRD
+preplace inst axi_smc -pg 1 -lvl 10 -x 3550 -y 160 -defaultsOSRD
+preplace inst decimation_pipeline1 -pg 1 -lvl 3 -x 910 -y 540 -defaultsOSRD
+preplace netloc proc_sys_reset_0_peripheral_aresetn 1 1 5 440 400 770 290 1080 240 1400 120 NJ
+preplace netloc usp_rf_data_converter_0_clk_adc1 1 0 10 60 220 410 410 760 350 1090 250 1410 190 1710 190 2050 240 2390 270 3040 150 N
+preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 1 9 470 20 NJ 20 NJ 20 NJ 20 NJ 20 2030 10 2400 30 3010 60 3400
+preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 0 9 50 240 450J 380 NJ 380 1070J 210 NJ 210 NJ 210 2020J 220 2400J 280 3030
+preplace netloc clk_wiz_0_locked 1 0 2 40 210 400
+preplace netloc usp_rf_data_converter_0_clk_adc2 1 0 3 60 440 NJ 440 730
+preplace netloc rst_ps8_0_99M_peripheral_aresetn 1 1 9 470 390 780J 300 1040J 180 NJ 180 NJ 180 2060 230 2380J 290 3050J 240 3410
+preplace netloc axis_data_fifo_0_M_AXIS 1 5 1 1660 80n
+preplace netloc axis_subset_converter_0_M_AXIS 1 6 1 N 100
+preplace netloc usp_rf_data_converter_0_m11_axis 1 2 1 N 200
+preplace netloc usp_rf_data_converter_0_m10_axis 1 2 1 N 180
+preplace netloc axis_combiner_0_M_AXIS 1 4 1 1420 270n
+preplace netloc decimation_pipeline_M_AXIS 1 3 1 1050 210n
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 8 2 2990J -310 3410
+preplace netloc ps8_0_axi_periph_M00_AXI 1 6 5 2060 20 NJ 20 3020J 30 NJ 30 3690
+preplace netloc ps8_0_axi_periph_M01_AXI 1 1 10 460 370 NJ 370 1060J 200 NJ 200 NJ 200 2010J 250 NJ 250 NJ 250 NJ 250 3700
+preplace netloc axi_dma_0_M_AXI_S2MM 1 7 3 2380J 50 NJ 50 3390
+preplace netloc axi_smc_M00_AXI 1 7 4 2410 260 NJ 260 NJ 260 3690
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 8 2 3000 -300 NJ
+preplace netloc sysref_in_1 1 0 2 NJ 230 NJ
+preplace netloc adc1_clk_1 1 0 2 NJ 140 410J
+preplace netloc vin1_01_1 1 0 2 NJ 170 400J
+preplace netloc vin1_23_1 1 0 2 NJ 200 410J
+preplace netloc S_AXIS_DATA_I_1 1 2 1 740 220n
+preplace netloc S_AXIS_DATA_Q_1 1 2 1 750 240n
+preplace netloc decimation_pipeline1_M_AXIS 1 3 1 1100 330n
+levelinfo -pg 1 0 230 600 910 1250 1540 1860 2220 2700 3220 3550 3720
+pagesize -pg 1 -db -bbox -sgen -160 -380 3780 650
 "
 }
 
