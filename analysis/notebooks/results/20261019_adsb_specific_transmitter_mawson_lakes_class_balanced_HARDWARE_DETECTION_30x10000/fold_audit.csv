@@ -1,0 +1,6 @@
+fold,training_records,validation_records,training_classes,validation_classes,record_overlap,payload_hash_overlap
+1,240000,60000,30,30,0,3872
+2,240000,60000,30,30,0,3801
+3,240000,60000,30,30,0,3917
+4,240000,60000,30,30,0,3840
+5,240000,60000,30,30,0,3925
