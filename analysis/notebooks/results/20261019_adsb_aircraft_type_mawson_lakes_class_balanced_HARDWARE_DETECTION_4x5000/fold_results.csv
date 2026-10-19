@@ -1,0 +1,26 @@
+experiment,model,fold,n_train,n_validation,accuracy,balanced_accuracy,macro_f1
+physical_feature_svm,Physical-feature RBF SVM,1,16000,4000,0.568,0.568,0.5738173616086976
+physical_feature_random_forest,Physical-feature random forest,1,16000,4000,0.5735,0.5735,0.5814463870419656
+preamble_cnn,Compact 1D CNN,1,16000,4000,0.6095,0.6094999999999999,0.6200548540571502
+preamble_tcn,Compact TCN,1,16000,4000,0.623,0.623,0.628862888013825
+preamble_gru_rnn,Compact bidirectional GRU,1,16000,4000,0.64275,0.64275,0.6437124306550274
+physical_feature_svm,Physical-feature RBF SVM,2,16000,4000,0.577,0.577,0.5836950448377687
+physical_feature_random_forest,Physical-feature random forest,2,16000,4000,0.57725,0.57725,0.5858780171491822
+preamble_cnn,Compact 1D CNN,2,16000,4000,0.5825,0.5825,0.5739607591275822
+preamble_tcn,Compact TCN,2,16000,4000,0.61575,0.61575,0.6196227497313845
+preamble_gru_rnn,Compact bidirectional GRU,2,16000,4000,0.63675,0.6367499999999999,0.6498500356100193
+physical_feature_svm,Physical-feature RBF SVM,3,16000,4000,0.5825,0.5825,0.5889450183796778
+physical_feature_random_forest,Physical-feature random forest,3,16000,4000,0.58125,0.58125,0.5896566351793769
+preamble_cnn,Compact 1D CNN,3,16000,4000,0.618,0.6180000000000001,0.6309952672444626
+preamble_tcn,Compact TCN,3,16000,4000,0.6205,0.6204999999999999,0.6225024369748339
+preamble_gru_rnn,Compact bidirectional GRU,3,16000,4000,0.64175,0.64175,0.6577827377492134
+physical_feature_svm,Physical-feature RBF SVM,4,16000,4000,0.5715,0.5715,0.578477349978929
+physical_feature_random_forest,Physical-feature random forest,4,16000,4000,0.58525,0.58525,0.5941787001597001
+preamble_cnn,Compact 1D CNN,4,16000,4000,0.604,0.6040000000000001,0.6206995975876323
+preamble_tcn,Compact TCN,4,16000,4000,0.611,0.611,0.6153494767618812
+preamble_gru_rnn,Compact bidirectional GRU,4,16000,4000,0.6355,0.6355,0.6492640015469315
+physical_feature_svm,Physical-feature RBF SVM,5,16000,4000,0.57275,0.5727500000000001,0.5791971781330377
+physical_feature_random_forest,Physical-feature random forest,5,16000,4000,0.58675,0.5867500000000001,0.5952941721414032
+preamble_cnn,Compact 1D CNN,5,16000,4000,0.62975,0.62975,0.624310148383946
+preamble_tcn,Compact TCN,5,16000,4000,0.6365,0.6365,0.6393678518693058
+preamble_gru_rnn,Compact bidirectional GRU,5,16000,4000,0.6445,0.6445,0.6555786483760424
