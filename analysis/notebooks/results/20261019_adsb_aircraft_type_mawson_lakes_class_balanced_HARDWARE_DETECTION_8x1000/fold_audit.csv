@@ -1,0 +1,6 @@
+fold,training_records,validation_records,training_classes,validation_classes,training_aircraft,validation_aircraft,aircraft_icao_overlap,record_overlap,payload_hash_overlap
+1,6400,1600,8,8,59,56,56,0,154
+2,6400,1600,8,8,57,57,55,0,150
+3,6400,1600,8,8,59,55,55,0,144
+4,6400,1600,8,8,59,55,55,0,150
+5,6400,1600,8,8,59,55,55,0,150

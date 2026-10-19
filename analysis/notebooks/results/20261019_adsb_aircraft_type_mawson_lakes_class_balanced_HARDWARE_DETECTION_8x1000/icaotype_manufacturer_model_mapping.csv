@@ -1,0 +1,25 @@
+class_index,icaotype,manufacturer,model,aircraft,records
+0,BE20,Unknown,Beech King Air 200,4,767
+0,BE20,Unknown,Beech King Air B200,1,92
+0,BE20,Unknown,Unknown,2,141
+1,C172,Unknown,Cessna 172-S,5,492
+1,C172,Unknown,Cessna 172N Skyhawk,1,235
+1,C172,Unknown,Cessna R.172-K,1,6
+1,C172,Unknown,Unknown,3,267
+2,C182,Unknown,Cessna 182-T,4,832
+2,C182,Unknown,Cessna 182Q Skylane,1,48
+2,C182,Unknown,Unknown,2,120
+3,DA40,Unknown,Aeroprakt A-22 LS,1,82
+3,DA40,Unknown,Diamond Aircraft Diamond Star DA40,1,46
+3,DA40,Unknown,Diamond DA 40-A,1,18
+3,DA40,Unknown,Diamond Star,17,581
+3,DA40,Unknown,Diamond T-52-A,3,131
+3,DA40,Unknown,SOCATA TB10 Tobago,2,23
+3,DA40,Unknown,Unknown,3,119
+4,DA42,Unknown,Diamond Twin Star,1,723
+4,DA42,Unknown,Unknown,1,277
+5,H269,Unknown,Unknown,1,1000
+6,P28A,Unknown,Piper PA-28-181,1,812
+6,P28A,Unknown,Unknown,1,188
+7,SIRA,Unknown,Cessna 182F Skylane,1,563
+7,SIRA,Unknown,Piper PA-32 300 Cherokee Six,1,437
