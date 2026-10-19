@@ -1,0 +1,45 @@
+{
+  "capture_files": [
+    "061026_ML_HARDWARE_DETECTION.npy",
+    "091026_ML_HARDWARE_DETECTION.npy",
+    "141026_ML_HARDWARE_DETECTION.npy",
+    "151026_ML_HARDWARE_DETECTION.npy"
+  ],
+  "total_records": 1065344,
+  "crc_valid_records": 1025961,
+  "embedded_calendar_days": [
+    "2026-10-06",
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-09",
+    "2026-10-10",
+    "2026-10-11",
+    "2026-10-12",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-17",
+    "2026-10-18",
+    "2026-10-19"
+  ],
+  "total_icao_classes": 437,
+  "num_classes": 6,
+  "samples_per_class": 4000,
+  "selected_icaos": [
+    "7C0077",
+    "7C444D",
+    "7C7144",
+    "7C79B4",
+    "7C7B5F",
+    "7C7B61"
+  ],
+  "retained_classes": 6,
+  "retained_records": 24000,
+  "smallest_retained_class": "7C0077",
+  "smallest_retained_count": 4000,
+  "largest_retained_class": "7C0077",
+  "largest_retained_count": 4000,
+  "aircraft_on_multiple_days": 6,
+  "folds": 5,
+  "best_model": "Compact bidirectional GRU"
+}
