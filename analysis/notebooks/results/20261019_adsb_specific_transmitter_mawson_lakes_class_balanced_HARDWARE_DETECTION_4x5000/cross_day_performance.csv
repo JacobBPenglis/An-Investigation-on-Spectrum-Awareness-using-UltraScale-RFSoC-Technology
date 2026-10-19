@@ -1,0 +1,6 @@
+experiment,aircraft_group,classes,records,accuracy,balanced_accuracy,macro_f1
+physical_feature_svm,multiple days,4,20000,0.6749,0.6749,0.6681950241023322
+physical_feature_random_forest,multiple days,4,20000,0.67825,0.67825,0.67440702609531
+preamble_cnn,multiple days,4,20000,0.78065,0.7806500000000001,0.7791480181499082
+preamble_tcn,multiple days,4,20000,0.7715,0.7715,0.7697453581808713
+preamble_gru_rnn,multiple days,4,20000,0.7749,0.7749,0.7737878941402705
