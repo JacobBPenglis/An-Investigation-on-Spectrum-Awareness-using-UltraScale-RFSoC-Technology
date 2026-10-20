@@ -1,0 +1,42 @@
+class_index,icaotype,manufacturer,model,aircraft,records
+0,A21N,Unknown,A321-271NY(XLR),1,29
+0,A21N,Unknown,Airbus A321 251NXSL,1,6
+0,A21N,Unknown,Unknown,20,9965
+1,B738,BOEING,737-800,1,90
+1,B738,Unknown,Boeing 737-800,3,131
+1,B738,Unknown,Boeing 737-81D,1,23
+1,B738,Unknown,Boeing 737-838,36,5125
+1,B738,Unknown,Boeing 737-8FE,20,1719
+1,B738,Unknown,Boeing 737-8KG,1,6
+1,B738,Unknown,Boeing 737NG 838/W,3,419
+1,B738,Unknown,Boeing 737NG 8FE/W,3,95
+1,B738,Unknown,Unknown,15,2392
+2,BE20,Unknown,Beech King Air 200,4,7724
+2,BE20,Unknown,Beech King Air B200,1,814
+2,BE20,Unknown,Unknown,2,1462
+3,C172,Unknown,Cessna 172-S,5,5091
+3,C172,Unknown,Cessna 172N Skyhawk,1,2138
+3,C172,Unknown,Cessna R.172-K,1,35
+3,C172,Unknown,Unknown,3,2736
+4,C182,Unknown,Cessna 182-T,4,8283
+4,C182,Unknown,Cessna 182Q Skylane,1,515
+4,C182,Unknown,Unknown,2,1202
+5,DA40,Unknown,Aeroprakt A-22 LS,1,647
+5,DA40,Unknown,Diamond Aircraft Diamond Star DA40,1,418
+5,DA40,Unknown,Diamond DA 40-A,1,210
+5,DA40,Unknown,Diamond Star,17,6106
+5,DA40,Unknown,Diamond T-52-A,3,1429
+5,DA40,Unknown,SOCATA TB10 Tobago,2,177
+5,DA40,Unknown,Unknown,3,1013
+6,DA42,Unknown,Diamond Twin Star,1,7342
+6,DA42,Unknown,Unknown,1,2658
+7,DH8D,DE HAVILLAND,DHC-8-400 Dash 8,2,1671
+7,DH8D,Unknown,Bombardier DHC-8-Q-402,2,2509
+7,DH8D,Unknown,Dash 8-400,1,109
+7,DH8D,Unknown,Unknown,4,5711
+8,H269,Unknown,Unknown,1,10000
+9,LJ45,Unknown,Bombardier Learjet 45,1,10000
+10,P28A,Unknown,Piper PA-28-181,1,7925
+10,P28A,Unknown,Unknown,1,2075
+11,SIRA,Unknown,Cessna 182F Skylane,1,5590
+11,SIRA,Unknown,Piper PA-32 300 Cherokee Six,1,4410
